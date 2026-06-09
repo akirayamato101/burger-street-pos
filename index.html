@@ -1703,6 +1703,20 @@
               <span class="stat-card-value" id="summaryAvg">₱0.00</span>
             </div>
           </div>
+          <div class="stat-card" style="border-left:4px solid var(--red);">
+            <div class="stat-card-icon">💸</div>
+            <div class="stat-card-info">
+              <span class="stat-card-label">Cash Advances</span>
+              <span class="stat-card-value" id="summaryCashAdv" style="color:var(--red);">₱0.00</span>
+            </div>
+          </div>
+          <div class="stat-card" style="border-left:4px solid var(--green);">
+            <div class="stat-card-icon">🏦</div>
+            <div class="stat-card-info">
+              <span class="stat-card-label">Net Sales</span>
+              <span class="stat-card-value" id="summaryNet" style="color:var(--green);">₱0.00</span>
+            </div>
+          </div>
         </div>
 
         <!-- Top Items -->
@@ -1843,7 +1857,90 @@
           <div style="font-size:0.88rem;margin-bottom:20px;">Start by setting your Opening Inventory for today.</div>
           <button class="btn btn-primary" onclick="openInvModal('opening')">+ Set Opening Inventory</button>
         </div>
+
+        <!-- ===== STOCK DELIVERY LOG ===== -->
+        <div class="dash-section" style="margin-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h4 style="font-weight:800;color:var(--text);font-size:1rem;">🚚 Stock Deliveries</h4>
+            <button class="btn btn-primary btn-sm" onclick="openDeliveryModal()">+ Record Delivery</button>
+          </div>
+          <div id="deliveryLogList">
+            <p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No deliveries recorded yet.</p>
+          </div>
+        </div>
+
+        <!-- ===== CASH ADVANCE LOG ===== -->
+        <div class="dash-section" style="margin-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h4 style="font-weight:800;color:var(--text);font-size:1rem;">💸 Cash Advances</h4>
+            <button class="btn btn-sm" onclick="openCashAdvanceModal()" style="background:var(--blue);color:#fff;font-weight:700;">+ Record Cash Advance</button>
+          </div>
+          <div id="cashAdvanceTotalBar" style="display:none;padding:10px 14px;border-radius:10px;background:var(--bg3);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.85rem;font-weight:700;color:var(--text2);">Total Deducted Today</span>
+            <span id="cashAdvanceTotalAmt" style="font-weight:800;color:var(--red);font-size:1rem;">₱0.00</span>
+          </div>
+          <div id="cashAdvanceList">
+            <p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No cash advances recorded yet.</p>
+          </div>
+        </div>
       </section>
+
+      <!-- ===== CASH ADVANCE MODAL ===== -->
+      <div id="cashAdvanceModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+        <div style="background:var(--card-bg);border-radius:20px;padding:28px 24px;width:min(94vw,480px);max-height:85vh;overflow-y:auto;box-shadow:var(--shadow);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <h4 style="font-weight:800;font-size:1.1rem;">💸 Record Cash Advance</h4>
+            <button onclick="closeCashAdvanceModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3);">✕</button>
+          </div>
+          <div style="padding:12px 16px;border-radius:10px;background:var(--bg3);margin-bottom:18px;font-size:0.83rem;color:var(--text3);line-height:1.5;">
+            ⚠️ The cash advance amount will be <strong style="color:var(--red);">deducted from today's sales</strong> and recorded with date and time.
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">CASHIER NAME *</label>
+            <input type="text" id="caName" class="input-field" style="width:100%;" placeholder="e.g. Juan dela Cruz" />
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">AMOUNT (₱) *</label>
+            <input type="number" id="caAmount" class="input-field" style="width:100%;" placeholder="e.g. 200" min="1" inputmode="decimal" />
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">REASON / NOTES</label>
+            <input type="text" id="caReason" class="input-field" style="width:100%;" placeholder="e.g. Lunch advance, transportation" />
+          </div>
+          <div style="margin-bottom:20px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">DATE & TIME</label>
+            <input type="datetime-local" id="caDateTime" class="input-field" style="width:100%;" />
+          </div>
+          <button class="btn" onclick="saveCashAdvance()" style="width:100%;font-size:1rem;background:var(--blue);color:#fff;font-weight:800;">Save Cash Advance</button>
+        </div>
+      </div>
+
+      <!-- ===== DELIVERY MODAL ===== -->
+      <div id="deliveryModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+        <div style="background:var(--card-bg);border-radius:20px;padding:28px 24px;width:min(94vw,480px);max-height:85vh;overflow-y:auto;box-shadow:var(--shadow);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <h4 style="font-weight:800;font-size:1.1rem;">🚚 Record Stock Delivery</h4>
+            <button onclick="closeDeliveryModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3);">✕</button>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">ITEM NAME *</label>
+            <input type="text" id="deliveryItem" class="input-field" style="width:100%;" placeholder="e.g. Burger Patties, Buns, Cooking Oil" />
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">QUANTITY *</label>
+            <input type="text" id="deliveryQty" class="input-field" style="width:100%;" placeholder="e.g. 50 pcs, 2 boxes, 5 kg" />
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">SUPPLIER / NOTES</label>
+            <input type="text" id="deliverySupplier" class="input-field" style="width:100%;" placeholder="e.g. Owner delivery, SM Supermarket" />
+          </div>
+          <div style="margin-bottom:20px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">DATE & TIME</label>
+            <input type="datetime-local" id="deliveryDateTime" class="input-field" style="width:100%;" />
+          </div>
+          <button class="btn btn-primary" onclick="saveDelivery()" style="width:100%;font-size:1rem;">Save Delivery</button>
+        </div>
+      </div>
 
       <!-- ===== SETTINGS PAGE ===== -->
       <section id="page-settings" class="page">
@@ -2191,6 +2288,8 @@ function unlockApp() {
   renderSummary();
   refreshProductList();
   refreshSettingsPage();
+  renderDeliveryLog();
+  renderCashAdvanceLog();
 }
 
 function logOut() {
@@ -2229,7 +2328,7 @@ function showPage(page) {
   if (page === 'summary') renderSummary();
   if (page === 'products') refreshProductList();
   if (page === 'settings') refreshSettingsPage();
-  if (page === 'inventory') renderInventory();
+  if (page === 'inventory') { renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); }
 }
 
 function toggleSidebar() {
@@ -2694,9 +2793,20 @@ function renderSummary() {
   const count = orders.length;
   const avg = count > 0 ? totalSales / count : 0;
 
+  // Cash advances for this date
+  const caTotal = (posState.cashAdvances || [])
+    .filter(a => a.datetime.startsWith(summaryDate))
+    .reduce((s, a) => s + (a.amount || 0), 0);
+  const netSales = Math.max(0, totalSales - caTotal);
+
   document.getElementById('summaryIncome').textContent = '₱' + fmt(totalSales);
   document.getElementById('summaryOrders').textContent = count;
   document.getElementById('summaryAvg').textContent = '₱' + fmt(avg);
+
+  const caEl = document.getElementById('summaryCashAdv');
+  const netEl = document.getElementById('summaryNet');
+  if (caEl) caEl.textContent = caTotal > 0 ? '-₱' + fmt(caTotal) : '₱0.00';
+  if (netEl) netEl.textContent = '₱' + fmt(netSales);
 
   // Top items
   const itemMap = {};
@@ -2903,6 +3013,190 @@ function togglePinEnabled() {
     refreshSettingsPage();
     showToast('PIN lock enabled. Set your PIN below.', 'success');
   }
+}
+
+// =================== DELIVERY LOG ===================
+
+function openDeliveryModal() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.getElementById('deliveryDateTime').value = local;
+  document.getElementById('deliveryItem').value = '';
+  document.getElementById('deliveryQty').value = '';
+  document.getElementById('deliverySupplier').value = '';
+  const modal = document.getElementById('deliveryModal');
+  modal.style.display = 'flex';
+}
+
+function closeDeliveryModal() {
+  document.getElementById('deliveryModal').style.display = 'none';
+}
+
+function saveDelivery() {
+  const item = document.getElementById('deliveryItem').value.trim();
+  const qty = document.getElementById('deliveryQty').value.trim();
+  const supplier = document.getElementById('deliverySupplier').value.trim();
+  const dt = document.getElementById('deliveryDateTime').value;
+
+  if (!item) { showToast('Please enter an item name.', 'error'); return; }
+  if (!qty) { showToast('Please enter a quantity.', 'error'); return; }
+
+  const delivery = {
+    id: Date.now(),
+    item,
+    qty,
+    supplier: supplier || '—',
+    datetime: dt || new Date().toISOString(),
+    recordedBy: posState.settings.cashierName || CASHIER_NAME
+  };
+
+  if (!posState.deliveries) posState.deliveries = [];
+  posState.deliveries.unshift(delivery);
+  savePos();
+  closeDeliveryModal();
+  renderDeliveryLog();
+  showToast('✅ Delivery recorded!', 'success');
+}
+
+function renderDeliveryLog() {
+  const container = document.getElementById('deliveryLogList');
+  if (!container) return;
+  const deliveries = posState.deliveries || [];
+  if (!deliveries.length) {
+    container.innerHTML = '<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No deliveries recorded yet.</p>';
+    return;
+  }
+  container.innerHTML = deliveries.map(d => {
+    const dt = new Date(d.datetime);
+    const dateStr = dt.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+    const timeStr = dt.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border);gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:800;font-size:0.95rem;color:var(--text);">${escHtml(d.item)}</div>
+          <div style="font-size:0.82rem;color:var(--orange);font-weight:700;margin-top:2px;">Qty: ${escHtml(d.qty)}</div>
+          <div style="font-size:0.78rem;color:var(--text3);margin-top:2px;">📦 ${escHtml(d.supplier)} &nbsp;·&nbsp; 👤 ${escHtml(d.recordedBy)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:0.78rem;font-weight:700;color:var(--text2);">${dateStr}</div>
+          <div style="font-size:0.78rem;color:var(--text3);">${timeStr}</div>
+          <button onclick="deleteDelivery(${d.id})" style="background:none;border:none;color:var(--red);font-size:0.75rem;cursor:pointer;margin-top:4px;font-weight:700;">🗑 Remove</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function deleteDelivery(id) {
+  if (!confirm('Remove this delivery record?')) return;
+  posState.deliveries = (posState.deliveries || []).filter(d => d.id !== id);
+  savePos();
+  renderDeliveryLog();
+  showToast('Delivery record removed.', 'success');
+}
+
+// =================== CASH ADVANCE ===================
+
+function openCashAdvanceModal() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.getElementById('caDateTime').value = local;
+  document.getElementById('caName').value = posState.settings.cashierName || '';
+  document.getElementById('caAmount').value = '';
+  document.getElementById('caReason').value = '';
+  document.getElementById('cashAdvanceModal').style.display = 'flex';
+}
+
+function closeCashAdvanceModal() {
+  document.getElementById('cashAdvanceModal').style.display = 'none';
+}
+
+function saveCashAdvance() {
+  const name = document.getElementById('caName').value.trim();
+  const amount = parseFloat(document.getElementById('caAmount').value);
+  const reason = document.getElementById('caReason').value.trim();
+  const dt = document.getElementById('caDateTime').value;
+
+  if (!name) { showToast('Please enter the cashier name.', 'error'); return; }
+  if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
+
+  const advance = {
+    id: Date.now(),
+    name,
+    amount,
+    reason: reason || '—',
+    datetime: dt || new Date().toISOString()
+  };
+
+  if (!posState.cashAdvances) posState.cashAdvances = [];
+  posState.cashAdvances.unshift(advance);
+  savePos();
+  closeCashAdvanceModal();
+  renderCashAdvanceLog();
+  showToast(`✅ Cash advance of ₱${fmt(amount)} recorded and deducted from today's sales.`, 'success');
+}
+
+function renderCashAdvanceLog() {
+  const container = document.getElementById('cashAdvanceList');
+  const totalBar = document.getElementById('cashAdvanceTotalBar');
+  const totalAmt = document.getElementById('cashAdvanceTotalAmt');
+  if (!container) return;
+
+  const advances = posState.cashAdvances || [];
+
+  // Filter to today's advances for the total bar
+  const today = new Date().toISOString().split('T')[0];
+  const todayAdvances = advances.filter(a => a.datetime.startsWith(today));
+  const todayTotal = todayAdvances.reduce((s, a) => s + (a.amount || 0), 0);
+
+  if (todayTotal > 0) {
+    totalBar.style.display = 'flex';
+    totalAmt.textContent = '₱' + fmt(todayTotal);
+  } else {
+    totalBar.style.display = 'none';
+  }
+
+  if (!advances.length) {
+    container.innerHTML = '<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No cash advances recorded yet.</p>';
+    return;
+  }
+
+  container.innerHTML = advances.map(a => {
+    const dt = new Date(a.datetime);
+    const dateStr = dt.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+    const timeStr = dt.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    const isToday = a.datetime.startsWith(today);
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border);gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-weight:800;font-size:0.95rem;color:var(--text);">👤 ${escHtml(a.name)}</span>
+            ${isToday ? '<span style="font-size:0.7rem;background:var(--red);color:#fff;padding:2px 8px;border-radius:20px;font-weight:700;">TODAY</span>' : ''}
+          </div>
+          <div style="font-size:0.82rem;color:var(--text3);margin-top:2px;">📝 ${escHtml(a.reason)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-weight:800;color:var(--red);font-size:1rem;">-₱${fmt(a.amount)}</div>
+          <div style="font-size:0.78rem;font-weight:700;color:var(--text2);">${dateStr}</div>
+          <div style="font-size:0.78rem;color:var(--text3);">${timeStr}</div>
+          <button onclick="deleteCashAdvance(${a.id})" style="background:none;border:none;color:var(--red);font-size:0.75rem;cursor:pointer;margin-top:4px;font-weight:700;">🗑 Remove</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function deleteCashAdvance(id) {
+  if (!confirm('Remove this cash advance record?')) return;
+  posState.cashAdvances = (posState.cashAdvances || []).filter(a => a.id !== id);
+  savePos();
+  renderCashAdvanceLog();
+  showToast('Cash advance record removed.', 'success');
+}
+
+function getCashAdvanceTotalToday() {
+  const today = new Date().toISOString().split('T')[0];
+  return (posState.cashAdvances || [])
+    .filter(a => a.datetime.startsWith(today))
+    .reduce((s, a) => s + (a.amount || 0), 0);
 }
 
 function confirmClearData() {
