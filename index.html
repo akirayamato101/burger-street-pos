@@ -398,6 +398,11 @@
 
     .page { display: none; }
     .page.active { display: block; animation: fadeIn 0.3s ease; }
+    /* Ensure non-POS pages don't get compressed by POS layout */
+    #page-orders.active, #page-summary.active, #page-products.active,
+    #page-inventory.active, #page-settings.active {
+      min-height: unset;
+    }
 
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -2356,6 +2361,10 @@ function showPage(page) {
 
   const pageEl = document.getElementById('page-' + page);
   if (pageEl) pageEl.classList.add('active');
+
+  // Reset scroll position to top when switching pages
+  const pageContent = document.querySelector('.page-content');
+  if (pageContent) pageContent.scrollTop = 0;
 
   document.querySelectorAll(`[data-page="${page}"]`).forEach(n => n.classList.add('active'));
 
