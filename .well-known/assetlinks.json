@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.akirayamato101.twa",
+        "sha256_cert_fingerprints": ["35:B2:00:26:44:E7:20:34:C3:7E:CF:63:2D:0C:44:F3:2C:B6:3D:4F:D8:9A:DE:0C:76:21:7F:FA:1E:A0:FA:B2"]
+      }
+    }]
