@@ -1834,7 +1834,7 @@
             <table class="data-table" id="invReportTable">
               <thead>
                 <tr>
-                  <th>Ingredient/Item</th>
+                  <th>Ingredient/Supply</th>
                   <th>Opening</th>
                   <th>Closing</th>
                   <th>Used/Sold</th>
@@ -1922,12 +1922,23 @@
             <h4 style="font-weight:800;font-size:1.1rem;">🚚 Record Stock Delivery</h4>
             <button onclick="closeDeliveryModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3);">✕</button>
           </div>
+          <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:0.82rem;color:var(--green);font-weight:600;">
+            ✅ Received items will automatically be added to today's inventory stock.
+          </div>
           <div style="margin-bottom:14px;">
             <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">ITEM NAME *</label>
             <input type="text" id="deliveryItem" class="input-field" style="width:100%;" placeholder="e.g. Burger Patties, Buns, Cooking Oil" />
           </div>
           <div style="margin-bottom:14px;">
-            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">QUANTITY *</label>
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">QUANTITY RECEIVED *</label>
+            <div style="display:grid;grid-template-columns:1fr 100px;gap:8px;">
+              <input type="number" id="deliveryQtyNum" class="input-field" min="0" step="1" placeholder="0" style="font-weight:800;font-size:1rem;color:var(--orange);" oninput="autoFillDeliveryQty()" />
+              <input type="text" id="deliveryUnit" class="input-field" placeholder="pcs" style="text-align:center;" oninput="autoFillDeliveryQty()" />
+            </div>
+            <p style="font-size:0.75rem;color:var(--text3);margin-top:4px;">Enter the number and unit (e.g. 50 · pcs, 2 · boxes, 5 · kg)</p>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">DISPLAY QUANTITY (optional note)</label>
             <input type="text" id="deliveryQty" class="input-field" style="width:100%;" placeholder="e.g. 50 pcs, 2 boxes, 5 kg" />
           </div>
           <div style="margin-bottom:14px;">
@@ -1938,7 +1949,7 @@
             <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">DATE & TIME</label>
             <input type="datetime-local" id="deliveryDateTime" class="input-field" style="width:100%;" />
           </div>
-          <button class="btn btn-primary" onclick="saveDelivery()" style="width:100%;font-size:1rem;">Save Delivery</button>
+          <button class="btn btn-primary" onclick="saveDelivery()" style="width:100%;font-size:1rem;">✅ Save & Add to Inventory</button>
         </div>
       </div>
 
@@ -3017,12 +3028,23 @@ function togglePinEnabled() {
 
 // =================== DELIVERY LOG ===================
 
+function autoFillDeliveryQty() {
+  const n = document.getElementById('deliveryQtyNum').value;
+  const u = document.getElementById('deliveryUnit').value.trim() || 'pcs';
+  const display = document.getElementById('deliveryQty');
+  if (n && display && !display._manuallyEdited) {
+    display.value = `${n} ${u}`;
+  }
+}
+
 function openDeliveryModal() {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   document.getElementById('deliveryDateTime').value = local;
   document.getElementById('deliveryItem').value = '';
   document.getElementById('deliveryQty').value = '';
+  document.getElementById('deliveryQtyNum').value = '';
+  document.getElementById('deliveryUnit').value = 'pcs';
   document.getElementById('deliverySupplier').value = '';
   const modal = document.getElementById('deliveryModal');
   modal.style.display = 'flex';
@@ -3037,6 +3059,8 @@ function saveDelivery() {
   const qty = document.getElementById('deliveryQty').value.trim();
   const supplier = document.getElementById('deliverySupplier').value.trim();
   const dt = document.getElementById('deliveryDateTime').value;
+  const unit = document.getElementById('deliveryUnit').value.trim() || 'pcs';
+  const qtyNum = parseFloat(document.getElementById('deliveryQtyNum').value) || 0;
 
   if (!item) { showToast('Please enter an item name.', 'error'); return; }
   if (!qty) { showToast('Please enter a quantity.', 'error'); return; }
@@ -3045,6 +3069,8 @@ function saveDelivery() {
     id: Date.now(),
     item,
     qty,
+    qtyNum,
+    unit,
     supplier: supplier || '—',
     datetime: dt || new Date().toISOString(),
     recordedBy: posState.settings.cashierName || CASHIER_NAME
@@ -3053,9 +3079,28 @@ function saveDelivery() {
   if (!posState.deliveries) posState.deliveries = [];
   posState.deliveries.unshift(delivery);
   savePos();
+
+  // ── AUTO-ADD TO TODAY'S OPENING INVENTORY ──
+  if (qtyNum > 0) {
+    const dateKey = getTodayInvKey();
+    const invData = loadInventoryData();
+    if (!invData[dateKey]) invData[dateKey] = {};
+    if (!invData[dateKey].opening) invData[dateKey].opening = { ingredients: [], amounts: [] };
+    const ings = invData[dateKey].opening.ingredients;
+    // Find existing ingredient (case-insensitive match)
+    const existing = ings.find(i => i.name.trim().toLowerCase() === item.toLowerCase());
+    if (existing) {
+      existing.qty = (existing.qty || 0) + qtyNum;
+    } else {
+      ings.push({ name: item, unit: unit, qty: qtyNum });
+    }
+    saveInventoryData(invData);
+    renderInventory();
+  }
+
   closeDeliveryModal();
   renderDeliveryLog();
-  showToast('✅ Delivery recorded!', 'success');
+  showToast('✅ Delivery recorded & added to inventory!', 'success');
 }
 
 function renderDeliveryLog() {
@@ -3074,7 +3119,7 @@ function renderDeliveryLog() {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border);gap:10px;">
         <div style="flex:1;min-width:0;">
           <div style="font-weight:800;font-size:0.95rem;color:var(--text);">${escHtml(d.item)}</div>
-          <div style="font-size:0.82rem;color:var(--orange);font-weight:700;margin-top:2px;">Qty: ${escHtml(d.qty)}</div>
+          <div style="font-size:0.82rem;color:var(--orange);font-weight:700;margin-top:2px;">Qty: ${d.qtyNum ? `${d.qtyNum} ${escHtml(d.unit||'pcs')}` : escHtml(d.qty)}</div>
           <div style="font-size:0.78rem;color:var(--text3);margin-top:2px;">📦 ${escHtml(d.supplier)} &nbsp;·&nbsp; 👤 ${escHtml(d.recordedBy)}</div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
@@ -3380,7 +3425,7 @@ function openInvModal(type) {
     ]).map(a => ({...a}));
 
     // Descriptions for opening
-    document.getElementById('invIngDesc').textContent = 'How many of each ingredient do you have for today? (count in pieces, packs, bags, etc.)';
+    document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply do you have for today? (count in pieces, packs, bags, etc.)';
     document.getElementById('invAmtDesc').textContent = 'Enter the peso amount for today. (e.g. pocket money for change, petty cash, fund)';
 
   } else {
@@ -3410,7 +3455,7 @@ function openInvModal(type) {
     }
 
     // Descriptions for closing
-    document.getElementById('invIngDesc').textContent = 'How many of each ingredient is LEFT at the end of the day?';
+    document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply is LEFT at the end of the day?';
     document.getElementById('invAmtDesc').textContent = 'How much cash / amount is LEFT at the end of the day?';
   }
 
@@ -3429,7 +3474,7 @@ function renderInvModal() {
   if (!isClosing) {
     ingHeader.style.gridTemplateColumns = '1fr 90px 90px 32px';
     ingHeader.innerHTML = `
-      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">INGREDIENT / ITEM</span>
+      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">INGREDIENT / SUPPLY</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">UNIT</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">QTY FOR TODAY</span>
       <span></span>`;
@@ -3452,7 +3497,7 @@ function renderInvModal() {
     // Closing ingredients: show opening qty, input closing qty
     ingHeader.style.gridTemplateColumns = '1fr 80px 100px 100px';
     ingHeader.innerHTML = `
-      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">INGREDIENT / ITEM</span>
+      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">INGREDIENT / SUPPLY</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">UNIT</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;color:var(--blue);">STARTED WITH</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;color:var(--green);">LEFT OVER</span>`;
@@ -3613,7 +3658,7 @@ function renderInventory() {
   let openHTML = '';
 
   if (openIngredients.length) {
-    openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients</div>`;
+    openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients/Supplies</div>`;
     openHTML += openIngredients.map(i => `
       <div class="inv-list-item">
         <div>
@@ -3645,7 +3690,7 @@ function renderInventory() {
     let closeHTML = '';
 
     if (closeIngredients.length) {
-      closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients Left</div>`;
+      closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients/Supplies Left</div>`;
       closeHTML += closeIngredients.map(i => {
         const openIng = openIngredients.find(o => o.name === i.name);
         const usedQty = openIng ? Math.max(0, (openIng.qty||0) - (i.closingQty||0)) : 0;
