@@ -392,29 +392,21 @@
     /* ========== PAGE CONTENT ========== */
     .page-content {
       flex: 1;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-    }
-
-    .page { display: none; }
-    .page.active { display: flex; flex-direction: column; flex: 1; min-height: 0; animation: fadeIn 0.3s ease; }
-
-    /* Non-POS pages scroll themselves */
-    #page-orders.active,
-    #page-summary.active,
-    #page-products.active,
-    #page-inventory.active,
-    #page-settings.active {
       overflow-y: auto;
       padding: 24px;
     }
 
-    /* POS page uses its own internal layout */
-    #page-pos.active {
-      overflow: hidden;
+    .page { display: none; }
+    .page.active { display: block; animation: fadeIn 0.3s ease; }
+
+    /* POS page fills the content area so pos-layout height:100% works */
+    #page-pos {
+      height: 100%;
       padding: 0;
+    }
+    #page-pos.active {
+      display: flex;
+      flex-direction: column;
     }
 
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -424,10 +416,8 @@
       display: grid;
       grid-template-columns: 1fr 380px;
       gap: 20px;
-      flex: 1;
-      min-height: 0;
+      height: 100%;
       overflow: hidden;
-      padding: 24px;
     }
 
     /* ---- LEFT: Menu Panel ---- */
@@ -1427,19 +1417,16 @@
       }
       .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.4); }
       .menu-btn { display: flex; }
-      .pos-layout { grid-template-columns: 1fr; overflow-y: auto; padding: 14px; }
-      .menu-panel { min-height: 0; height: auto; overflow: visible; }
+      .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; }
+      #page-pos { height: auto; }
+      .menu-panel { min-height: 0; height: auto; }
+      .page-content { overflow-y: auto; }
       .order-panel { display: none; }
       .order-panel.show-mobile { display: flex; position: fixed; inset: 0; z-index: 150; border-radius: 0; }
     }
 
     @media (max-width: 600px) {
-      #page-orders.active,
-      #page-summary.active,
-      #page-products.active,
-      #page-inventory.active,
-      #page-settings.active { padding: 14px; }
-      .pos-layout { padding: 14px; }
+      .page-content { padding: 14px; }
       .menu-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
       .summary-cards { grid-template-columns: 1fr 1fr; }
     }
@@ -1596,7 +1583,7 @@
     </header>
 
     <!-- PAGES -->
-    <div class="page-content">
+    <div class="page-content" id="pageContent">
 
       <!-- ===== POS PAGE ===== -->
       <section id="page-pos" class="page active">
@@ -2379,10 +2366,7 @@ function showPage(page) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
   const pageEl = document.getElementById('page-' + page);
-  if (pageEl) {
-    pageEl.classList.add('active');
-    pageEl.scrollTop = 0;
-  }
+  if (pageEl) pageEl.classList.add('active');
 
   document.querySelectorAll(`[data-page="${page}"]`).forEach(n => n.classList.add('active'));
 
@@ -2392,6 +2376,10 @@ function showPage(page) {
   // Float cart only visible on New Order page
   const floatBtn = document.getElementById('floatCartBtn');
   if (floatBtn) floatBtn.classList.toggle('float-cart-hidden', page !== 'pos');
+
+  // ALWAYS scroll back to top when switching pages
+  const pc = document.getElementById('pageContent');
+  if (pc) pc.scrollTop = 0;
 
   closeSidebar();
 
