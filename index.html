@@ -1407,7 +1407,9 @@
       }
       .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.4); }
       .menu-btn { display: flex; }
-      .pos-layout { grid-template-columns: 1fr; height: auto; }
+      .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; }
+      .menu-panel { min-height: 0; height: auto; }
+      .page-content { overflow-y: auto; }
       .order-panel { display: none; }
       .order-panel.show-mobile { display: flex; position: fixed; inset: 0; z-index: 150; border-radius: 0; }
     }
