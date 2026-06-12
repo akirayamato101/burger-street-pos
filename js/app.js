@@ -38,7 +38,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (summaryDate)  summaryDate.value  = today;
   if (inventoryDate) inventoryDate.value = today;
 
-  unlockApp();
+  // Show lock screen if PIN is enabled, otherwise go straight in
+  if (appSettings.pinEnabled) {
+    document.getElementById('lockScreen').classList.remove('hidden');
+    document.getElementById('app').classList.add('hidden');
+    pinBuffer = '';
+    updatePinDots();
+    document.getElementById('pinError').classList.add('hidden');
+  } else {
+    unlockApp();
+  }
 });
 
 async function saveAppSettings() {
@@ -1004,17 +1013,77 @@ async function deleteCashAdvance(advanceId) {
   showToast('Cash advance record removed.', 'success');
 }
 
-async function confirmClearData() {
-  const confirmed  = window.confirm('Are you sure you want to delete ALL data?\n\nThis includes:\n• All orders\n• All products\n• Inventory records\n• Settings\n\nThis CANNOT be undone.');
-  if (!confirmed) return;
-  const confirmed2 = window.confirm('Last chance — are you absolutely sure?');
-  if (!confirmed2) return;
+// =================== PIN VERIFY MODAL ===================
+let pinVerifyCallback = null;
+let pinVerifyBuffer   = '';
 
-  await dbClearAll();
-  appSettings  = { pin: CASHIER_PIN, cashierName: CASHIER_NAME, theme: 'dark', pinEnabled: false };
-  orderCounter = 1;
-  showToast('All data cleared. Restarting...', 'success');
-  setTimeout(() => location.reload(), 1500);
+function openPinVerify(onSuccess) {
+  pinVerifyCallback = onSuccess;
+  pinVerifyBuffer   = '';
+  updatePinVerifyDots();
+  document.getElementById('pinVerifyError').classList.add('hidden');
+  document.getElementById('pinVerifyModal').classList.remove('hidden');
+}
+
+function closePinVerify() {
+  pinVerifyBuffer   = '';
+  pinVerifyCallback = null;
+  document.getElementById('pinVerifyModal').classList.add('hidden');
+}
+
+function enterPinVerify(digit) {
+  if (pinVerifyBuffer.length >= 4) return;
+  pinVerifyBuffer += digit;
+  updatePinVerifyDots();
+  if (pinVerifyBuffer.length === 4) {
+    setTimeout(() => {
+      const pin = appSettings.pin || CASHIER_PIN;
+      if (pinVerifyBuffer === pin) {
+        closePinVerify();
+        if (pinVerifyCallback) pinVerifyCallback();
+      } else {
+        document.getElementById('pinVerifyError').classList.remove('hidden');
+        pinVerifyBuffer = '';
+        updatePinVerifyDots();
+        setTimeout(() => document.getElementById('pinVerifyError').classList.add('hidden'), 2000);
+      }
+    }, 200);
+  }
+}
+
+function deletePinVerify() {
+  pinVerifyBuffer = pinVerifyBuffer.slice(0, -1);
+  updatePinVerifyDots();
+}
+
+function updatePinVerifyDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById('vd' + i);
+    if (dot) dot.classList.toggle('filled', i < pinVerifyBuffer.length);
+  }
+}
+
+// =================== CLEAR DATA ===================
+function confirmClearData() {
+  const doDelete = async () => {
+    const confirmed = window.confirm('Are you sure you want to delete ALL data?\n\nThis includes:\n• All orders\n• All products\n• Inventory records\n• Settings\n\nThis CANNOT be undone.');
+    if (!confirmed) return;
+    const confirmed2 = window.confirm('Last chance — are you absolutely sure?');
+    if (!confirmed2) return;
+
+    await dbClearAll();
+    appSettings  = { pin: CASHIER_PIN, cashierName: CASHIER_NAME, theme: 'dark', pinEnabled: false };
+    orderCounter = 1;
+    showToast('All data cleared. Restarting...', 'success');
+    setTimeout(() => location.reload(), 1500);
+  };
+
+  // If PIN is enabled, require PIN before clearing
+  if (appSettings.pinEnabled) {
+    openPinVerify(doDelete);
+  } else {
+    doDelete();
+  }
 }
 
 // =================== VIEW / EDIT ORDER ===================

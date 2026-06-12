@@ -671,6 +671,40 @@
   </div>
 </div>
 
+<!-- ===== PIN VERIFY MODAL (for protected actions) ===== -->
+<div id="pinVerifyModal" class="modal hidden">
+  <div class="modal-box" style="max-width:340px;text-align:center;">
+    <div class="modal-header">
+      <h3>🔒 Enter PIN to Continue</h3>
+      <button class="modal-close" onclick="closePinVerify()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:24px 20px;">
+      <p style="font-size:0.88rem;color:var(--text3);margin-bottom:20px;">This action is PIN-protected.</p>
+      <div class="pin-dots" style="justify-content:center;margin-bottom:20px;">
+        <div class="pin-dot" id="vd0"></div>
+        <div class="pin-dot" id="vd1"></div>
+        <div class="pin-dot" id="vd2"></div>
+        <div class="pin-dot" id="vd3"></div>
+      </div>
+      <p id="pinVerifyError" class="hidden" style="color:#ef4444;font-size:0.82rem;margin-bottom:12px;">❌ Incorrect PIN</p>
+      <div class="pin-grid">
+        <button class="pin-btn" onclick="enterPinVerify('1')">1</button>
+        <button class="pin-btn" onclick="enterPinVerify('2')">2</button>
+        <button class="pin-btn" onclick="enterPinVerify('3')">3</button>
+        <button class="pin-btn" onclick="enterPinVerify('4')">4</button>
+        <button class="pin-btn" onclick="enterPinVerify('5')">5</button>
+        <button class="pin-btn" onclick="enterPinVerify('6')">6</button>
+        <button class="pin-btn" onclick="enterPinVerify('7')">7</button>
+        <button class="pin-btn" onclick="enterPinVerify('8')">8</button>
+        <button class="pin-btn" onclick="enterPinVerify('9')">9</button>
+        <button class="pin-btn pin-btn-clear" onclick="deletePinVerify()">⌫</button>
+        <button class="pin-btn" onclick="enterPinVerify('0')">0</button>
+        <button class="pin-btn pin-btn-cancel" onclick="closePinVerify()">✕</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ===== ADD/EDIT PRODUCT MODAL ===== -->
 <div id="productModal" class="modal hidden">
   <div class="modal-box" style="max-width:420px">

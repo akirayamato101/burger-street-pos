@@ -205,6 +205,42 @@
       75% { transform: translateX(8px); }
     }
 
+    /* ========== PIN VERIFY MODAL ========== */
+    .pin-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid var(--orange);
+      background: transparent;
+      transition: background 0.2s;
+    }
+    .pin-dot.filled { background: var(--orange); }
+
+    .pin-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      max-width: 240px;
+      margin: 0 auto;
+    }
+
+    .pin-btn {
+      height: 56px;
+      border-radius: 14px;
+      border: 2px solid var(--border);
+      background: var(--bg3);
+      color: var(--text);
+      font-size: 1.2rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: 'Nunito', sans-serif;
+    }
+    .pin-btn:hover  { background: var(--orange); border-color: var(--orange); color: #fff; }
+    .pin-btn:active { transform: scale(0.93); }
+    .pin-btn-clear  { font-size: 1rem; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: #ef4444; }
+    .pin-btn-cancel { font-size: 1rem; background: var(--bg3); color: var(--text3); }
+
     /* ========== APP LAYOUT ========== */
     .app-container {
       display: flex;
