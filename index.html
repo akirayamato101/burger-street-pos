@@ -3407,8 +3407,9 @@ function enterPinVerify(digit) {
     setTimeout(() => {
       const pin = posState.settings.pin || CASHIER_PIN;
       if (pinVerifyBuffer === pin) {
+        const cb = pinVerifyCallback;
         closePinVerify();
-        if (pinVerifyCallback) pinVerifyCallback();
+        if (cb) cb();
       } else {
         document.getElementById('pinVerifyError').classList.remove('hidden');
         pinVerifyBuffer = '';
