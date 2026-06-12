@@ -2026,7 +2026,7 @@
       <!-- ===== SETTINGS PAGE ===== -->
       <section id="page-settings" class="page">
         <div class="page-header-bar">
-          <h3 class="section-title">⚙️ Settings</h3>
+          <h3 class="section-title" id="settingsTitleTap" onclick="ownerTapSecret()" style="user-select:none;">⚙️ Settings</h3>
         </div>
 
         <div class="dash-section" style="max-width:480px;">
@@ -2060,9 +2060,9 @@
           </div>
         </div>
 
-        <div class="dash-section" style="max-width:480px;margin-top:0;">
+        <div class="dash-section" id="ownerPinSection" style="max-width:480px;margin-top:0;display:none;">
           <h4 style="font-weight:800;margin-bottom:6px;color:var(--orange)">👑 Owner PIN</h4>
-          <p style="font-size:0.85rem;color:var(--text3);margin-bottom:14px;line-height:1.5;">Set a separate PIN only the owner knows. Required to access <strong>Clear Data</strong>. Keep this different from the cashier PIN.</p>
+          <p style="font-size:0.85rem;color:var(--text3);margin-bottom:14px;line-height:1.5;">Set a secret PIN only the owner knows. Required to access <strong>Clear Data</strong>.</p>
           <div style="margin-bottom:12px;">
             <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">NEW OWNER 4-DIGIT PIN</label>
             <input type="password" id="newOwnerPin" class="input-field" style="width:100%;letter-spacing:4px;font-size:1.2rem;" maxlength="4" placeholder="••••" inputmode="numeric" pattern="[0-9]*" />
@@ -3128,7 +3128,27 @@ function deleteProduct(id) {
   });
 }
 
-// =================== SETTINGS ===================
+// =================== SECRET OWNER TAP ===================
+let ownerTapCount = 0;
+let ownerTapTimer = null;
+
+function ownerTapSecret() {
+  ownerTapCount++;
+  clearTimeout(ownerTapTimer);
+  ownerTapTimer = setTimeout(() => { ownerTapCount = 0; }, 2000);
+
+  if (ownerTapCount >= 5) {
+    ownerTapCount = 0;
+    const section = document.getElementById('ownerPinSection');
+    if (section) {
+      section.style.display = 'block';
+      section.scrollIntoView({ behavior: 'smooth' });
+      showToast('👑 Owner settings unlocked', 'success');
+    }
+  }
+}
+
+
 function refreshSettingsPage() {
   const nameInput = document.getElementById('settingsCashierName');
   const pinStatusLabel = document.getElementById('pinStatusLabel');
@@ -3146,9 +3166,13 @@ function refreshSettingsPage() {
   if (ownerPinStatus) {
     ownerPinStatus.textContent = posState.settings.ownerPin
       ? '✅ Owner PIN is set'
-      : '⚠️ No Owner PIN set — anyone can clear data';
+      : '⚠️ No Owner PIN set yet';
     ownerPinStatus.style.color = posState.settings.ownerPin ? 'var(--green)' : 'var(--orange)';
   }
+
+  // Always hide owner section on page refresh — revealed only by secret tap
+  const ownerSection = document.getElementById('ownerPinSection');
+  if (ownerSection) ownerSection.style.display = 'none';
 }
 
 function togglePinEnabled() {
