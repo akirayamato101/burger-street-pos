@@ -731,26 +731,27 @@ function autoDeductIngredients(soldItems) {
     const dayData = data[dateKey];
     if (!dayData.opening || !dayData.opening.ingredients || !dayData.opening.ingredients.length) return;
 
+    // Ensure usedQty tracker exists on each ingredient (never modifies opening.qty)
+    dayData.opening.ingredients.forEach(ing => {
+      if (ing.usedQty === undefined) ing.usedQty = 0;
+    });
+
     let changed = false;
     soldItems.forEach(item => {
       const product = (posState.customProducts || []).find(p => p.id === item.id);
       if (!product || !product.recipe || !product.recipe.length) return;
       product.recipe.forEach(recipeItem => {
         const totalDeduct = recipeItem.qty * item.qty;
-        // Deduct from opening ingredients (tracks used stock)
-        const ing = dayData.opening.ingredients.find(i => i.name.toLowerCase() === recipeItem.ingredient.toLowerCase());
+        const ing = dayData.opening.ingredients.find(
+          i => i.name.toLowerCase() === recipeItem.ingredient.toLowerCase()
+        );
         if (ing) {
-          ing.qty = Math.max(0, (ing.qty || 0) - totalDeduct);
+          const openingQty  = ing.qty || 0;        // original stock — never changes
+          const alreadyUsed = ing.usedQty || 0;
+          const available   = Math.max(0, openingQty - alreadyUsed);
+          const actualDeduct = Math.min(totalDeduct, available); // cap at what's left
+          ing.usedQty = alreadyUsed + actualDeduct;
           changed = true;
-        }
-        // Also deduct from closing if it exists
-        if (dayData.closing && dayData.closing.ingredients) {
-          const cIng = dayData.closing.ingredients.find(i => i.name.toLowerCase() === recipeItem.ingredient.toLowerCase());
-          if (cIng) {
-            if (cIng.closingQty !== undefined) {
-              cIng.closingQty = Math.max(0, (cIng.closingQty || 0) - totalDeduct);
-            }
-          }
         }
       });
     });
@@ -761,6 +762,19 @@ function autoDeductIngredients(soldItems) {
   } catch(e) {
     console.warn('autoDeductIngredients error:', e);
   }
+}
+
+// Helper: get remaining stock for an ingredient today (opening.qty - usedQty)
+function getRemainingStock(ingredientName) {
+  try {
+    const dateKey = new Date().toISOString().split('T')[0];
+    const data = loadInventoryData();
+    const ing = (data[dateKey]?.opening?.ingredients || []).find(
+      i => i.name.toLowerCase() === ingredientName.toLowerCase()
+    );
+    if (!ing) return null;
+    return Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
+  } catch(e) { return null; }
 }
 
 function confirmClearOrder() {
