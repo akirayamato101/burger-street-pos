@@ -2362,8 +2362,12 @@ function renderInventory() {
         <div>
           <span style="font-weight:700;">${escHtml(i.name)}</span>
           <span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(i.unit||'pcs')}</span>
+          ${i.usedQty > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">-${i.usedQty} sold</span>` : ''}
         </div>
-        <span style="font-weight:800;color:var(--orange);">${i.qty||0} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
+        <div style="text-align:right;">
+          <span style="font-weight:800;color:var(--orange);">${i.qty||0} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
+          ${i.usedQty > 0 ? `<div style="font-size:0.72rem;color:var(--green);font-weight:700;">${Math.max(0,(i.qty||0)-(i.usedQty||0))} left</div>` : ''}
+        </div>
       </div>`).join('');
   }
 
