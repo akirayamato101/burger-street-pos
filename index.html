@@ -1680,6 +1680,11 @@
         </a>
       </li>
       <li>
+        <a class="nav-item" onclick="showPage('reports')" data-page="reports">
+          <span class="nav-icon">📊</span><span>Inventory Totals</span>
+        </a>
+      </li>
+      <li>
         <a class="nav-item" onclick="showPage('settings')" data-page="settings">
           <span class="nav-icon">⚙️</span><span>Settings</span>
         </a>
@@ -2125,6 +2130,90 @@
       </div>
 
       <!-- ===== SETTINGS PAGE ===== -->
+      <!-- ===== SALES REPORTS PAGE ===== -->
+      <section id="page-reports" class="page">
+        <div class="page-header-bar">
+          <h3 class="section-title">📊 Inventory Totals</h3>
+          <div class="filter-row">
+            <select class="input-field" id="reportPeriod" onchange="renderReports()">
+              <option value="daily">Today</option>
+              <option value="weekly">This Week</option>
+              <option value="monthly">This Month</option>
+              <option value="yearly">This Year</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            <input type="date" class="input-field" id="reportFrom" onchange="renderReports()" style="display:none" />
+            <span id="reportToLabel" style="display:none;color:var(--text3);font-size:0.85rem;">to</span>
+            <input type="date" class="input-field" id="reportTo" onchange="renderReports()" style="display:none" />
+          </div>
+        </div>
+
+        <div id="reportPeriodLabel" style="font-size:0.82rem;color:var(--text3);margin-bottom:16px;font-weight:600;"></div>
+
+        <!-- Cash Advances Summary card -->
+        <div class="summary-cards" style="margin-bottom:20px;">
+          <div class="stat-card" style="border-left:4px solid var(--red);">
+            <div class="stat-card-icon">💸</div>
+            <div class="stat-card-info">
+              <span class="stat-card-label">Total Cash Advances</span>
+              <span class="stat-card-value" id="rptCashAdv" style="color:var(--red);">₱0.00</span>
+            </div>
+          </div>
+          <div class="stat-card" style="border-left:4px solid var(--blue);">
+            <div class="stat-card-icon">📅</div>
+            <div class="stat-card-info">
+              <span class="stat-card-label">Active Days (Inventory)</span>
+              <span class="stat-card-value" id="rptDays" style="color:var(--blue);">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-item inventory totals table -->
+        <div class="dash-section">
+          <h4 class="section-title" style="margin-bottom:6px;">🥩 Inventory Item Totals — All Cashiers</h4>
+          <p style="font-size:0.82rem;color:var(--text3);margin-bottom:14px;">Opening & closing counts per item, summed across all cashiers for the selected period.</p>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Item / Supply</th>
+                  <th>Total Opening</th>
+                  <th>Total Closing</th>
+                  <th>Total Used</th>
+                  <th>Cashiers Reported</th>
+                </tr>
+              </thead>
+              <tbody id="rptInventoryBody">
+                <tr><td colspan="5" class="empty-row">No inventory data for selected period.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Cash Advances detail table -->
+        <div class="dash-section">
+          <h4 class="section-title" style="margin-bottom:14px;">💸 Cash Advances — All Cashiers</h4>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr><th>Date</th><th>Cashier</th><th>Name</th><th>Amount</th><th>Reason</th></tr>
+              </thead>
+              <tbody id="rptCashAdvBody">
+                <tr><td colspan="5" class="empty-row">No cash advances for selected period.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Daily inventory summary per cashier -->
+        <div class="dash-section">
+          <h4 class="section-title" style="margin-bottom:14px;">📅 Daily Inventory by Cashier</h4>
+          <div id="rptDailyCashierInv">
+            <p style="color:var(--text3);font-size:0.88rem;text-align:center;padding:24px 0;">No data for selected period.</p>
+          </div>
+        </div>
+      </section>
+
       <section id="page-settings" class="page">
         <div class="page-header-bar">
           <h3 class="section-title" id="settingsTitleTap" onclick="ownerTapSecret()" style="user-select:none;">⚙️ Settings</h3>
@@ -2771,7 +2860,7 @@ function showPage(page) {
 
   document.querySelectorAll(`[data-page="${page}"]`).forEach(n => n.classList.add('active'));
 
-  const titles = { pos: 'New Order', orders: 'Order History', summary: 'My Summary', products: 'Manage Products', settings: 'Settings', inventory: 'Daily Inventory' };
+  const titles = { pos: 'New Order', orders: 'Order History', summary: 'My Summary', products: 'Manage Products', settings: 'Settings', inventory: 'Daily Inventory', reports: 'Inventory Totals' };
   document.getElementById('pageTitle').textContent = titles[page] || page;
 
   // Float cart only visible on New Order page
@@ -2790,6 +2879,7 @@ function showPage(page) {
   if (page === 'products') refreshProductList();
   if (page === 'settings') refreshSettingsPage();
   if (page === 'inventory') { renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); }
+  if (page === 'reports') { renderReports(); }
 }
 
 function toggleSidebar() {
@@ -3446,6 +3536,224 @@ function deleteProduct(id) {
   });
 }
 
+
+// =================== SALES REPORTS ===================
+function renderReports() {
+  const period = document.getElementById('reportPeriod')?.value || 'daily';
+  const fromEl  = document.getElementById('reportFrom');
+  const toEl    = document.getElementById('reportTo');
+  const toLabel = document.getElementById('reportToLabel');
+  if (fromEl)  fromEl.style.display  = period === 'custom' ? '' : 'none';
+  if (toEl)    toEl.style.display    = period === 'custom' ? '' : 'none';
+  if (toLabel) toLabel.style.display = period === 'custom' ? '' : 'none';
+
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  let startDate, endDate;
+
+  if (period === 'daily') {
+    startDate = endDate = todayStr;
+    document.getElementById('reportPeriodLabel').textContent = 'Today — ' + today.toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  } else if (period === 'weekly') {
+    const day = today.getDay();
+    const mon = new Date(today); mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+    startDate = mon.toISOString().split('T')[0];
+    endDate   = todayStr;
+    document.getElementById('reportPeriodLabel').textContent = 'Week of ' + mon.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' – ' + today.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+  } else if (period === 'monthly') {
+    startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    endDate   = todayStr;
+    document.getElementById('reportPeriodLabel').textContent = today.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' });
+  } else if (period === 'yearly') {
+    startDate = today.getFullYear() + '-01-01';
+    endDate   = todayStr;
+    document.getElementById('reportPeriodLabel').textContent = 'Year ' + today.getFullYear();
+  } else {
+    startDate = fromEl?.value || todayStr;
+    endDate   = toEl?.value   || todayStr;
+    document.getElementById('reportPeriodLabel').textContent = startDate + ' to ' + endDate;
+  }
+
+  const cashiers = getCashiers();
+
+  // ── Collect all inventory records across all cashiers ──
+  // Each record looks like: { date, cashierName, type:'opening'/'closing', items:[{name,qty,...}], amounts:[...] }
+  const allInvRecords = [];
+  for (const c of cashiers) {
+    try {
+      const s = localStorage.getItem(getCashierStorageKey(c.id));
+      if (!s) continue;
+      const st = JSON.parse(s);
+      const inv = st.inventory || {};
+      for (const [date, dayData] of Object.entries(inv)) {
+        if (date < startDate || date > endDate) continue;
+        if (dayData.opening) {
+          allInvRecords.push({ date, cashierName: c.name, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [] });
+        }
+        if (dayData.closing) {
+          allInvRecords.push({ date, cashierName: c.name, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [] });
+        }
+      }
+    } catch(e) {}
+  }
+  // Also include active cashier's local posState
+  if (activeCashier) {
+    try {
+      const inv = posState.inventory || {};
+      for (const [date, dayData] of Object.entries(inv)) {
+        if (date < startDate || date > endDate) continue;
+        const already = (t) => allInvRecords.some(r => r.date === date && r.cashierName === activeCashier.name && r.type === t);
+        if (dayData.opening && !already('opening')) {
+          allInvRecords.push({ date, cashierName: activeCashier.name, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [] });
+        }
+        if (dayData.closing && !already('closing')) {
+          allInvRecords.push({ date, cashierName: activeCashier.name, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [] });
+        }
+      }
+    } catch(e) {}
+  }
+
+  // ── Aggregate per item name across all cashiers ──
+  // itemMap[name] = { totalOpening: qty, totalClosing: qty, cashiersSet: Set }
+  const itemMap = {};
+  for (const rec of allInvRecords) {
+    for (const it of rec.items) {
+      const nm = (it.name || '').trim();
+      if (!nm) continue;
+      if (!itemMap[nm]) itemMap[nm] = { totalOpening: 0, totalClosing: 0, cashiers: new Set() };
+      if (rec.type === 'opening') {
+        itemMap[nm].totalOpening += (parseFloat(it.qty) || 0);
+        itemMap[nm].cashiers.add(rec.cashierName);
+      } else {
+        itemMap[nm].totalClosing += (parseFloat(it.qty) || 0);
+        itemMap[nm].cashiers.add(rec.cashierName);
+      }
+    }
+    // amounts (money-based) — treat label as item name
+    for (const am of rec.amounts) {
+      const nm = (am.label || am.name || '').trim();
+      if (!nm) continue;
+      if (!itemMap[nm]) itemMap[nm] = { totalOpening: 0, totalClosing: 0, cashiers: new Set() };
+      if (rec.type === 'opening') {
+        itemMap[nm].totalOpening += (parseFloat(am.amount) || 0);
+        itemMap[nm].cashiers.add(rec.cashierName);
+      } else {
+        itemMap[nm].totalClosing += (parseFloat(am.amount) || 0);
+        itemMap[nm].cashiers.add(rec.cashierName);
+      }
+    }
+  }
+
+  const activeDays = new Set(allInvRecords.map(r => r.date)).size;
+  document.getElementById('rptDays').textContent = activeDays;
+
+  const itemRows = Object.entries(itemMap).sort((a, b) => a[0].localeCompare(b[0])).map(([name, d]) => {
+    const used = Math.max(0, d.totalOpening - d.totalClosing);
+    const usedColor = used > 0 ? 'color:var(--red);' : 'color:var(--text3);';
+    return `<tr>
+      <td style="font-weight:700;">${escHtml(name)}</td>
+      <td style="color:var(--blue);font-weight:700;">${d.totalOpening % 1 === 0 ? d.totalOpening : d.totalOpening.toFixed(2)}</td>
+      <td style="color:var(--green);font-weight:700;">${d.totalClosing % 1 === 0 ? d.totalClosing : d.totalClosing.toFixed(2)}</td>
+      <td style="${usedColor}font-weight:700;">${used % 1 === 0 ? used : used.toFixed(2)}</td>
+      <td><span class="badge badge-blue">${d.cashiers.size} cashier${d.cashiers.size !== 1 ? 's' : ''}</span></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('rptInventoryBody').innerHTML = itemRows || '<tr><td colspan="5" class="empty-row">No inventory data for selected period.</td></tr>';
+
+  // ── Collect all cash advances across all cashiers ──
+  let allAdvances = [];
+  for (const c of cashiers) {
+    try {
+      const s = localStorage.getItem(getCashierStorageKey(c.id));
+      if (!s) continue;
+      const st = JSON.parse(s);
+      (st.cashAdvances || []).forEach(a => { a._cashierName = c.name; allAdvances.push(a); });
+    } catch(e) {}
+  }
+  if (activeCashier) {
+    (posState.cashAdvances || []).forEach(a => {
+      if (!allAdvances.find(x => x.id === a.id)) { a._cashierName = activeCashier.name; allAdvances.push(a); }
+    });
+  }
+  const filteredAdv = allAdvances.filter(a => {
+    const d = (a.datetime || '').split('T')[0];
+    return d >= startDate && d <= endDate;
+  }).sort((a, b) => (b.datetime || '').localeCompare(a.datetime || ''));
+
+  const totalAdv = filteredAdv.reduce((s, a) => s + (a.amount || 0), 0);
+  document.getElementById('rptCashAdv').textContent = '₱' + fmt(totalAdv);
+
+  const advRows = filteredAdv.map(a => {
+    const d = new Date((a.datetime || '').replace(' ', 'T'));
+    const dateLabel = isNaN(d) ? (a.datetime || '') : d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    return `<tr>
+      <td style="font-size:0.82rem;">${dateLabel}</td>
+      <td>${escHtml(a._cashierName || 'Unknown')}</td>
+      <td>${escHtml(a.name || '')}</td>
+      <td style="color:var(--red);font-weight:800;">₱${fmt(a.amount || 0)}</td>
+      <td style="color:var(--text3);font-size:0.82rem;">${escHtml(a.reason || '')}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('rptCashAdvBody').innerHTML = advRows || '<tr><td colspan="5" class="empty-row">No cash advances for selected period.</td></tr>';
+
+  // ── Daily inventory breakdown per cashier ──
+  // Group records by date → cashier
+  const byDateCashier = {};
+  for (const rec of allInvRecords) {
+    if (!byDateCashier[rec.date]) byDateCashier[rec.date] = {};
+    if (!byDateCashier[rec.date][rec.cashierName]) byDateCashier[rec.date][rec.cashierName] = { opening: null, closing: null };
+    byDateCashier[rec.date][rec.cashierName][rec.type] = rec;
+  }
+
+  const sortedDates = Object.keys(byDateCashier).sort().reverse();
+  let dailyHtml = '';
+  for (const date of sortedDates) {
+    const dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const cashierEntries = byDateCashier[date];
+    let cashierRows = '';
+    for (const [cname, recs] of Object.entries(cashierEntries)) {
+      const openItems = recs.opening ? [...(recs.opening.items || []), ...(recs.opening.amounts || [])] : [];
+      const closeItems = recs.closing ? [...(recs.closing.items || []), ...(recs.closing.amounts || [])] : [];
+      const hasOpen  = openItems.length > 0;
+      const hasClose = closeItems.length > 0;
+      const itemNames = [...new Set([...openItems.map(i => i.name || i.label || ''), ...closeItems.map(i => i.name || i.label || '')])].filter(Boolean);
+      let itemRowsHtml = itemNames.map(nm => {
+        const oIt = openItems.find(i => (i.name || i.label || '') === nm);
+        const cIt = closeItems.find(i => (i.name || i.label || '') === nm);
+        const oQty = oIt ? (parseFloat(oIt.qty || oIt.amount) || 0) : '—';
+        const cQty = cIt ? (parseFloat(cIt.qty || cIt.amount) || 0) : '—';
+        const used = (typeof oQty === 'number' && typeof cQty === 'number') ? Math.max(0, oQty - cQty) : '—';
+        return `<tr style="font-size:0.82rem;">
+          <td style="padding-left:20px;color:var(--text2);">${escHtml(nm)}</td>
+          <td style="color:var(--blue);">${typeof oQty === 'number' ? (oQty % 1 === 0 ? oQty : oQty.toFixed(2)) : oQty}</td>
+          <td style="color:var(--green);">${typeof cQty === 'number' ? (cQty % 1 === 0 ? cQty : cQty.toFixed(2)) : cQty}</td>
+          <td style="color:${typeof used === 'number' && used > 0 ? 'var(--red)' : 'var(--text3)'};">${typeof used === 'number' ? (used % 1 === 0 ? used : used.toFixed(2)) : used}</td>
+        </tr>`;
+      }).join('');
+      cashierRows += `
+        <tr style="background:var(--bg3);">
+          <td colspan="4" style="font-weight:800;padding:10px 14px;">
+            👤 ${escHtml(cname)}
+            ${hasOpen ? '<span class="badge badge-blue" style="margin-left:8px;">Opening ✓</span>' : '<span class="badge" style="margin-left:8px;background:var(--bg3);color:var(--text3);">No Opening</span>'}
+            ${hasClose ? '<span class="badge badge-green" style="margin-left:4px;">Closing ✓</span>' : '<span class="badge" style="margin-left:4px;background:var(--bg3);color:var(--text3);">No Closing</span>'}
+          </td>
+        </tr>
+        ${itemRowsHtml || `<tr><td colspan="4" style="padding-left:20px;color:var(--text3);font-size:0.82rem;padding-top:8px;padding-bottom:8px;">No items recorded.</td></tr>`}`;
+    }
+    dailyHtml += `
+      <div style="margin-bottom:20px;">
+        <div style="font-weight:800;font-size:0.95rem;color:var(--orange);margin-bottom:8px;padding:8px 12px;background:rgba(232,124,30,0.08);border-radius:8px;border-left:3px solid var(--orange);">📅 ${dateLabel}</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Item / Supply</th><th>Opening</th><th>Closing</th><th>Used</th></tr></thead>
+            <tbody>${cashierRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+  document.getElementById('rptDailyCashierInv').innerHTML = dailyHtml || '<p style="color:var(--text3);font-size:0.88rem;text-align:center;padding:24px 0;">No inventory data for selected period.</p>';
+}
+
 // =================== SECRET OWNER TAP ===================
 let ownerTapCount = 0;
 let ownerTapTimer = null;
@@ -3563,11 +3871,12 @@ function saveDelivery() {
     recordedBy: posState.settings.cashierName || CASHIER_NAME
   };
 
-  if (!posState.deliveries) posState.deliveries = [];
-  posState.deliveries.unshift(delivery);
-  savePos();
+  // Save to shared delivery log (visible to all cashiers)
+  const sharedDeliveries = loadSharedDeliveries();
+  sharedDeliveries.unshift(delivery);
+  saveSharedDeliveries(sharedDeliveries);
 
-  // ── AUTO-ADD TO TODAY'S OPENING INVENTORY ──
+  // ── AUTO-ADD TO TODAY'S SHARED INVENTORY ──
   if (qtyNum > 0) {
     const dateKey = getTodayInvKey();
     const invData = loadInventoryData();
@@ -3593,7 +3902,7 @@ function saveDelivery() {
 function renderDeliveryLog() {
   const container = document.getElementById('deliveryLogList');
   if (!container) return;
-  const deliveries = posState.deliveries || [];
+  const deliveries = loadSharedDeliveries();
   if (!deliveries.length) {
     container.innerHTML = '<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No deliveries recorded yet.</p>';
     return;
@@ -3620,8 +3929,8 @@ function renderDeliveryLog() {
 
 function deleteDelivery(id) {
   if (!confirm('Remove this delivery record?')) return;
-  posState.deliveries = (posState.deliveries || []).filter(d => d.id !== id);
-  savePos();
+  const dl = loadSharedDeliveries().filter(d => d.id !== id);
+  saveSharedDeliveries(dl);
   renderDeliveryLog();
   showToast('Delivery record removed.', 'success');
 }
@@ -3747,6 +4056,8 @@ function confirmClearData() {
     });
     localStorage.removeItem(CASHIERS_KEY);
     localStorage.removeItem(OWNER_GLOBAL_KEY);
+    localStorage.removeItem(INV_STORE_KEY);
+    localStorage.removeItem(SHARED_DELIVERY_KEY);
     showToast('All data cleared. Restarting...', 'success');
     setTimeout(() => location.reload(), 1500);
   };
@@ -4094,19 +4405,59 @@ function saveOrderEdits() {
 }
 
 // =================== INVENTORY SYSTEM ===================
-const INV_STORE_KEY = 'burgerStreetInventory';
+// SHARED inventory — all cashiers use the same store.
+// The closing inventory of one shift seeds the opening of the next.
+const INV_STORE_KEY = 'burgerStreetSharedInventory';
+const SHARED_DELIVERY_KEY = 'burgerStreetSharedDeliveries';
 
 function loadInventoryData() {
-  const key = activeCashier ? getCashierInvKey(activeCashier.id) : INV_STORE_KEY;
   try {
-    const s = localStorage.getItem(key);
+    const s = localStorage.getItem(INV_STORE_KEY);
     return s ? JSON.parse(s) : {};
   } catch(e) { return {}; }
 }
 
 function saveInventoryData(data) {
-  const key = activeCashier ? getCashierInvKey(activeCashier.id) : INV_STORE_KEY;
-  try { localStorage.setItem(key, JSON.stringify(data)); } catch(e) {}
+  try { localStorage.setItem(INV_STORE_KEY, JSON.stringify(data)); } catch(e) {}
+}
+
+// Shared deliveries (visible to all cashiers)
+function loadSharedDeliveries() {
+  try {
+    const s = localStorage.getItem(SHARED_DELIVERY_KEY);
+    return s ? JSON.parse(s) : [];
+  } catch(e) { return []; }
+}
+function saveSharedDeliveries(arr) {
+  try { localStorage.setItem(SHARED_DELIVERY_KEY, JSON.stringify(arr)); } catch(e) {}
+}
+
+// Auto-seed today's opening from the most recent previous closing.
+// Called when opening the inventory page if no opening exists for today.
+function seedOpeningFromLastClosing(dateKey, invData) {
+  // Find the most recent date before dateKey that has a closing
+  const dates = Object.keys(invData)
+    .filter(d => d < dateKey && invData[d].closing)
+    .sort();
+  if (!dates.length) return; // no previous closing found
+  const lastDate = dates[dates.length - 1];
+  const lastClosing = invData[lastDate].closing;
+  // Build an opening from the last closing quantities
+  const newOpening = {
+    ingredients: (lastClosing.ingredients || []).map(i => ({
+      name: i.name,
+      unit: i.unit,
+      qty: i.closingQty ?? i.qty ?? 0
+    })),
+    amounts: (lastClosing.amounts || []).map(a => ({
+      name: a.name,
+      amount: a.closingAmount ?? a.amount ?? 0
+    })),
+    seededFrom: lastDate
+  };
+  if (!invData[dateKey]) invData[dateKey] = {};
+  invData[dateKey].opening = newOpening;
+  saveInventoryData(invData);
 }
 
 function getTodayInvKey() {
@@ -4332,7 +4683,12 @@ function saveInvModal() {
 
 function renderInventory() {
   const dateKey = getTodayInvKey();
-  const data = loadInventoryData();
+  let data = loadInventoryData();
+  // Auto-seed opening from last shift closing if not yet set for today
+  if (!data[dateKey] || !data[dateKey].opening) {
+    seedOpeningFromLastClosing(dateKey, data);
+    data = loadInventoryData(); // reload after potential mutation
+  }
   const dayData = data[dateKey] || {};
   const op = dayData.opening || {};
   const cl = dayData.closing || {};
@@ -4374,6 +4730,14 @@ function renderInventory() {
   // ---- Opening list ----
   const openingList = document.getElementById('invOpeningList');
   let openHTML = '';
+
+  // Show a banner if opening was auto-seeded from previous shift's closing
+  if (op.seededFrom) {
+    const prevDate = new Date(op.seededFrom + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' });
+    openHTML += `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:0.8rem;color:var(--green);font-weight:700;">
+      🔄 Auto-filled from previous shift closing (${prevDate})
+    </div>`;
+  }
 
   if (openIngredients.length) {
     openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients/Supplies</div>`;
