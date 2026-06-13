@@ -1630,21 +1630,47 @@ function getCashAdvanceTotalToday() {
 }
 
 function confirmClearData() {
-  const doDelete = () => {
+  const doDelete = async () => {
     const confirmed = window.confirm(
       'Are you sure you want to delete ALL data?\n\nThis includes:\n• All orders\n• All products\n• Inventory records\n• Settings\n\nThis CANNOT be undone.'
     );
     if (!confirmed) return;
     const confirmed2 = window.confirm('Last chance — are you absolutely sure?');
     if (!confirmed2) return;
-    // Remove ALL keys belonging to this app (catches orphaned cashier keys too)
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('burgerStreet')) keysToRemove.push(key);
-    }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-    localStorage.removeItem(INV_KEY); // legacy key
+
+    // Wipe ALL localStorage for this app (catches every key, current and legacy/orphaned)
+    try { localStorage.clear(); } catch (e) {}
+
+    // Wipe sessionStorage too
+    try { sessionStorage.clear(); } catch (e) {}
+
+    // Delete any IndexedDB databases (legacy Dexie-based versions of this app)
+    try {
+      if (indexedDB.databases) {
+        const dbs = await indexedDB.databases();
+        await Promise.all((dbs || []).map(d => d.name ? indexedDB.deleteDatabase(d.name) : null));
+      } else {
+        indexedDB.deleteDatabase('BurgerStreetPOS');
+      }
+    } catch (e) {}
+
+    // Clear service worker caches so the next reload doesn't restore stale assets/data
+    try {
+      if (window.caches && caches.keys) {
+        const names = await caches.keys();
+        await Promise.all(names.map(n => caches.delete(n)));
+      }
+    } catch (e) {}
+
+    // Reset in-memory state so nothing gets re-saved before reload
+    activeCashier = null;
+    posState = {
+      orders: [], orderCounter: 1,
+      settings: { pin: CASHIER_PIN, cashierName: CASHIER_NAME, theme: 'dark', pinEnabled: false },
+      customProducts: []
+    };
+    cart = [];
+
     showToast('All data cleared. Restarting...', 'success');
     setTimeout(() => location.reload(), 1500);
   };
