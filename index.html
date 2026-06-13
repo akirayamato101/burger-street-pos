@@ -1554,6 +1554,35 @@
 
     <div id="cashierSelectList" style="width:100%;max-width:320px;margin:20px auto 0;"></div>
 
+    <!-- Only shown when no cashiers exist -->
+    <div id="setupOwnerBtn" style="display:none;width:100%;max-width:320px;margin:16px auto 0;">
+      <div id="setupPinSection" style="display:none;">
+        <p style="font-size:0.85rem;color:var(--text3);margin-bottom:10px;text-align:center;">Enter Owner PIN to access setup:</p>
+        <div style="display:flex;gap:16px;justify-content:center;margin-bottom:12px;">
+          <div class="dot" id="sd0"></div>
+          <div class="dot" id="sd1"></div>
+          <div class="dot" id="sd2"></div>
+          <div class="dot" id="sd3"></div>
+        </div>
+        <p id="setupPinError" class="pin-error hidden">❌ Incorrect PIN</p>
+        <div class="numpad">
+          <button class="num-btn" onclick="enterSetupPin('1')">1</button>
+          <button class="num-btn" onclick="enterSetupPin('2')">2</button>
+          <button class="num-btn" onclick="enterSetupPin('3')">3</button>
+          <button class="num-btn" onclick="enterSetupPin('4')">4</button>
+          <button class="num-btn" onclick="enterSetupPin('5')">5</button>
+          <button class="num-btn" onclick="enterSetupPin('6')">6</button>
+          <button class="num-btn" onclick="enterSetupPin('7')">7</button>
+          <button class="num-btn" onclick="enterSetupPin('8')">8</button>
+          <button class="num-btn" onclick="enterSetupPin('9')">9</button>
+          <button class="num-btn blank"></button>
+          <button class="num-btn" onclick="enterSetupPin('0')">0</button>
+          <button class="num-btn del-btn" onclick="deleteSetupPin()">⌫</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="showSetupPinOrBypass()" style="width:100%;background:var(--orange);margin-top:8px;">⚙️ Owner Setup</button>
+    </div>
+
     <div id="cashierPinSection" style="display:none;width:100%;max-width:320px;margin:16px auto 0;">
       <p id="cashierPinLabel" style="font-size:0.88rem;color:var(--text3);margin-bottom:12px;text-align:center;"></p>
       <div style="display:flex;gap:16px;justify-content:center;margin-bottom:16px;">
@@ -2339,13 +2368,16 @@
         <label style="font-size:0.8rem;color:var(--text3);font-weight:700;letter-spacing:1px;display:block;margin-bottom:6px;">CASHIER NAME</label>
         <input type="text" id="cashierMgmtName" class="input-field" style="width:100%;" placeholder="e.g. Maria" />
       </div>
+      <div id="cashierPinNote" style="background:rgba(232,124,30,0.1);border:1px solid rgba(232,124,30,0.3);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.82rem;color:var(--orange);">
+        💡 PIN is optional. Leave blank and the cashier will set their own PIN on first login.
+      </div>
       <div style="margin-bottom:14px;">
-        <label style="font-size:0.8rem;color:var(--text3);font-weight:700;letter-spacing:1px;display:block;margin-bottom:6px;">PIN (4 digits)</label>
-        <input type="password" id="cashierMgmtPin" class="input-field" style="width:100%;letter-spacing:4px;font-size:1.1rem;" maxlength="4" placeholder="••••" inputmode="numeric" pattern="[0-9]*" />
+        <label style="font-size:0.8rem;color:var(--text3);font-weight:700;letter-spacing:1px;display:block;margin-bottom:6px;">PIN (4 digits) — optional</label>
+        <input type="password" id="cashierMgmtPin" class="input-field" style="width:100%;letter-spacing:4px;font-size:1.1rem;" maxlength="4" placeholder="leave blank" inputmode="numeric" pattern="[0-9]*" />
       </div>
       <div style="margin-bottom:18px;">
-        <label style="font-size:0.8rem;color:var(--text3);font-weight:700;letter-spacing:1px;display:block;margin-bottom:6px;">CONFIRM PIN</label>
-        <input type="password" id="cashierMgmtPin2" class="input-field" style="width:100%;letter-spacing:4px;font-size:1.1rem;" maxlength="4" placeholder="••••" inputmode="numeric" pattern="[0-9]*" />
+        <label style="font-size:0.8rem;color:var(--text3);font-weight:700;letter-spacing:1px;display:block;margin-bottom:6px;">CONFIRM PIN — optional</label>
+        <input type="password" id="cashierMgmtPin2" class="input-field" style="width:100%;letter-spacing:4px;font-size:1.1rem;" maxlength="4" placeholder="leave blank" inputmode="numeric" pattern="[0-9]*" />
       </div>
     </div>
     <div class="modal-footer">
@@ -2552,8 +2584,10 @@ function renderCashierList() {
     list.innerHTML = `
       <div style="text-align:center;padding:24px 0;color:var(--text3);">
         <div style="font-size:2rem;margin-bottom:8px;">👤</div>
-        <div style="font-size:0.88rem;">No cashiers set up yet.</div>
-        <div style="font-size:0.8rem;margin-top:4px;">Tap ⚙️ Settings title 5× to add cashiers.</div>
+        <div style="font-size:0.88rem;margin-bottom:16px;">No cashiers set up yet.</div>
+        <button class="btn btn-primary" onclick="enterAsOwner()" style="background:var(--orange);width:100%;max-width:240px;">
+          👑 Enter as Owner
+        </button>
       </div>`;
     pinSection.style.display = 'none';
     return;
@@ -2562,11 +2596,24 @@ function renderCashierList() {
   list.innerHTML = cashiers.map(c => `
     <div class="cashier-select-item ${selectedCashierId === c.id ? 'selected' : ''}" onclick="selectCashier('${c.id}')">
       <div class="cashier-avatar">${c.name.charAt(0).toUpperCase()}</div>
-      <div class="cashier-select-name">${escHtml(c.name)}</div>
+      <div class="cashier-select-name">${escHtml(c.name)}${!c.pin ? ' <span style="font-size:0.7rem;color:var(--orange);font-weight:700;">SET PIN</span>' : ''}</div>
     </div>
   `).join('');
 
   pinSection.style.display = selectedCashierId ? 'block' : 'none';
+}
+
+function enterAsOwner() {
+  // Enter app as owner with no cashier selected — full access
+  activeCashier = { id: 'owner', name: 'Owner', pin: null };
+  posState = {
+    orders: [], orderCounter: 1,
+    settings: { cashierName: 'Owner', theme: 'dark', pinEnabled: false },
+    customProducts: []
+  };
+  loadPos();
+  unlockApp();
+  showToast('👑 Entered as Owner', 'success');
 }
 
 function selectCashier(id) {
@@ -2575,10 +2622,40 @@ function selectCashier(id) {
   updateCashierPinDots();
   document.getElementById('cashierPinError').classList.add('hidden');
   renderCashierList();
-  document.getElementById('cashierPinSection').style.display = 'block';
+
   const cashiers = getCashiers();
   const c = cashiers.find(x => x.id === id);
-  if (c) document.getElementById('cashierPinLabel').textContent = `Enter PIN for ${c.name}`;
+  if (!c) return;
+
+  // No PIN set yet — enter directly and prompt to set PIN
+  if (!c.pin) {
+    activeCashier = c;
+    posState = {
+      orders: [], orderCounter: 1,
+      settings: { cashierName: c.name, theme: 'dark', pinEnabled: false },
+      customProducts: []
+    };
+    loadPos();
+    unlockApp();
+    showToast(`Welcome, ${c.name}! Please set your PIN in Settings.`, 'success');
+    setTimeout(() => showSetPinPrompt(c), 1200);
+    return;
+  }
+
+  // Has PIN — show numpad
+  document.getElementById('cashierPinSection').style.display = 'block';
+  document.getElementById('cashierPinLabel').textContent = `Enter PIN for ${c.name}`;
+}
+
+function showSetPinPrompt(cashier) {
+  showPage('settings');
+  // Show the PIN set section
+  const pinSetSection = document.getElementById('pinSetSection');
+  if (pinSetSection) {
+    pinSetSection.style.display = 'block';
+    pinSetSection.scrollIntoView({ behavior: 'smooth' });
+  }
+  showToast(`Hi ${cashier.name}! Set your 4-digit PIN below.`, 'success');
 }
 
 function enterCashierPin(digit) {
@@ -2592,7 +2669,6 @@ function enterCashierPin(digit) {
       if (!c) return;
       if (cashierLoginBuffer === c.pin) {
         activeCashier = c;
-        // Reset posState for this cashier
         posState = {
           orders: [], orderCounter: 1,
           settings: { pin: c.pin, cashierName: c.name, theme: 'dark', pinEnabled: true },
@@ -3754,13 +3830,29 @@ function savePinSettings() {
   if (pin1 !== pin2) {
     showToast('PINs do not match.', 'error'); return;
   }
+
+  // Check not same as owner PIN
+  const global = loadGlobalState();
+  if (pin1 === (global.ownerPin || '')) {
+    showToast('Your PIN cannot be the same as the Owner PIN.', 'error'); return;
+  }
+
   posState.settings.pin = pin1;
   posState.settings.pinEnabled = true;
   savePos();
+
+  // Also save PIN back to the cashiers list so it works on login screen
+  if (activeCashier && activeCashier.id !== 'owner') {
+    const cashiers = getCashiers();
+    const updated = cashiers.map(c => c.id === activeCashier.id ? { ...c, pin: pin1 } : c);
+    saveCashiers(updated);
+    activeCashier.pin = pin1;
+  }
+
   document.getElementById('newPin').value = '';
   document.getElementById('confirmPin').value = '';
   refreshSettingsPage();
-  showToast('✅ PIN saved! Lock Terminal to test it.', 'success');
+  showToast('✅ PIN saved!', 'success');
 }
 
 function saveOwnerPin() {
@@ -3810,6 +3902,7 @@ function openAddCashierModal() {
   document.getElementById('cashierMgmtName').value = '';
   document.getElementById('cashierMgmtPin').value = '';
   document.getElementById('cashierMgmtPin2').value = '';
+  document.getElementById('cashierPinNote').style.display = 'block';
   document.getElementById('cashierMgmtModal').classList.remove('hidden');
 }
 
@@ -3822,6 +3915,7 @@ function editCashierModal(id) {
   document.getElementById('cashierMgmtName').value = c.name;
   document.getElementById('cashierMgmtPin').value = '';
   document.getElementById('cashierMgmtPin2').value = '';
+  document.getElementById('cashierPinNote').style.display = 'none';
   document.getElementById('cashierMgmtModal').classList.remove('hidden');
 }
 
@@ -3830,19 +3924,28 @@ function saveCashierMgmt() {
   const name = document.getElementById('cashierMgmtName').value.trim();
   const pin1 = document.getElementById('cashierMgmtPin').value.trim();
   const pin2 = document.getElementById('cashierMgmtPin2').value.trim();
+
   if (!name) { showToast('Please enter a cashier name.', 'error'); return; }
-  if (!id && (!pin1 || pin1.length !== 4 || !/^\d{4}$/.test(pin1))) { showToast('PIN must be exactly 4 digits.', 'error'); return; }
-  if (pin1 && pin1 !== pin2) { showToast('PINs do not match.', 'error'); return; }
+
+  // PIN validation only if PIN was entered
+  if (pin1) {
+    if (pin1.length !== 4 || !/^\d{4}$/.test(pin1)) { showToast('PIN must be exactly 4 digits.', 'error'); return; }
+    if (pin1 !== pin2) { showToast('PINs do not match.', 'error'); return; }
+    const global = loadGlobalState();
+    if (pin1 === (global.ownerPin || '')) { showToast('Cashier PIN must be different from Owner PIN.', 'error'); return; }
+  }
+
   let cashiers = getCashiers();
-  const global = loadGlobalState();
-  if (pin1 && pin1 === (global.ownerPin || '')) { showToast('Cashier PIN must be different from Owner PIN.', 'error'); return; }
   if (id) {
+    // Edit — update name and PIN if provided
     cashiers = cashiers.map(c => c.id === id ? { ...c, name, pin: pin1 || c.pin } : c);
     showToast('✅ Cashier updated!', 'success');
   } else {
-    cashiers.push({ id: 'c_' + Date.now(), name, pin: pin1 });
-    showToast('✅ Cashier added!', 'success');
+    // Add new — PIN is optional (null = not set yet, cashier will set on first login)
+    cashiers.push({ id: 'c_' + Date.now(), name, pin: pin1 || null });
+    showToast(`✅ ${name} added! They will set their PIN on first login.`, 'success');
   }
+
   saveCashiers(cashiers);
   closeModal('cashierMgmtModal');
   renderCashierManagement();
