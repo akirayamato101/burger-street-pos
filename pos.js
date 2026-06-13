@@ -1165,42 +1165,23 @@ function renderReports() {
 
   const cashiers = getCashiers();
 
-  // ── Collect all inventory records across all cashiers ──
+  // ── Collect all inventory records from the shared inventory store ──
+  // Opening/closing inventory is shared across all cashiers (burgerStreetSharedInventory),
+  // not stored per-cashier — so read from loadInventoryData() directly.
   // Each record looks like: { date, cashierName, type:'opening'/'closing', items:[{name,qty,...}], amounts:[...] }
   const allInvRecords = [];
-  for (const c of cashiers) {
-    try {
-      const s = localStorage.getItem(getCashierStorageKey(c.id));
-      if (!s) continue;
-      const st = JSON.parse(s);
-      const inv = st.inventory || {};
-      for (const [date, dayData] of Object.entries(inv)) {
-        if (date < startDate || date > endDate) continue;
-        if (dayData.opening) {
-          allInvRecords.push({ date, cashierName: c.name, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [] });
-        }
-        if (dayData.closing) {
-          allInvRecords.push({ date, cashierName: c.name, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [] });
-        }
+  try {
+    const sharedInv = loadInventoryData();
+    for (const [date, dayData] of Object.entries(sharedInv)) {
+      if (date < startDate || date > endDate) continue;
+      if (dayData.opening) {
+        allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [] });
       }
-    } catch(e) {}
-  }
-  // Also include active cashier's local posState
-  if (activeCashier) {
-    try {
-      const inv = posState.inventory || {};
-      for (const [date, dayData] of Object.entries(inv)) {
-        if (date < startDate || date > endDate) continue;
-        const already = (t) => allInvRecords.some(r => r.date === date && r.cashierName === activeCashier.name && r.type === t);
-        if (dayData.opening && !already('opening')) {
-          allInvRecords.push({ date, cashierName: activeCashier.name, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [] });
-        }
-        if (dayData.closing && !already('closing')) {
-          allInvRecords.push({ date, cashierName: activeCashier.name, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [] });
-        }
+      if (dayData.closing) {
+        allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [] });
       }
-    } catch(e) {}
-  }
+    }
+  } catch(e) {}
 
   // ── Aggregate per item name across all cashiers ──
   // itemMap[name] = { totalOpening: qty, totalClosing: qty, cashiersSet: Set }
@@ -1214,7 +1195,7 @@ function renderReports() {
         itemMap[nm].totalOpening += (parseFloat(it.qty) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
       } else {
-        itemMap[nm].totalClosing += (parseFloat(it.qty) || 0);
+        itemMap[nm].totalClosing += (parseFloat(it.closingQty ?? it.qty) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
       }
     }
@@ -1227,7 +1208,7 @@ function renderReports() {
         itemMap[nm].totalOpening += (parseFloat(am.amount) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
       } else {
-        itemMap[nm].totalClosing += (parseFloat(am.amount) || 0);
+        itemMap[nm].totalClosing += (parseFloat(am.closingAmount ?? am.amount) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
       }
     }
@@ -1309,8 +1290,8 @@ function renderReports() {
       let itemRowsHtml = itemNames.map(nm => {
         const oIt = openItems.find(i => (i.name || i.label || '') === nm);
         const cIt = closeItems.find(i => (i.name || i.label || '') === nm);
-        const oQty = oIt ? (parseFloat(oIt.qty || oIt.amount) || 0) : '—';
-        const cQty = cIt ? (parseFloat(cIt.qty || cIt.amount) || 0) : '—';
+        const oQty = oIt ? (parseFloat(oIt.qty ?? oIt.amount) || 0) : '—';
+        const cQty = cIt ? (parseFloat(cIt.closingQty ?? cIt.closingAmount ?? cIt.qty ?? cIt.amount) || 0) : '—';
         const used = (typeof oQty === 'number' && typeof cQty === 'number') ? Math.max(0, oQty - cQty) : '—';
         return `<tr style="font-size:0.82rem;">
           <td style="padding-left:20px;color:var(--text2);">${escHtml(nm)}</td>
