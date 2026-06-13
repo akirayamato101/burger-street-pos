@@ -2121,10 +2121,10 @@ function openInvModal(type) {
     if (cl.ingredients && cl.ingredients.length) {
       invIngredients = cl.ingredients.map(i => ({...i}));
     } else {
-      // seed from opening; closing adds closingQty
+      // seed from opening; closing adds closingQty (pre-filled with remaining stock after sales)
       invIngredients = (op.ingredients || []).map(i => ({
         ...i,
-        closingQty: i.qty
+        closingQty: Math.max(0, (i.qty||0) - (i.usedQty||0))
       }));
     }
 
