@@ -12,6 +12,18 @@ const INV_KEY = 'burgerStreetV5';
 const CASHIERS_KEY = 'burgerStreetCashiers';
 const OWNER_GLOBAL_KEY = 'burgerStreetGlobal';
 
+// Returns YYYY-MM-DD based on LOCAL time, not UTC.
+// Using toISOString() alone shifts the date by the timezone offset (e.g. in
+// Manila, UTC+8, anything before 8:00 AM local time gets stamped as "yesterday"
+// in UTC). That caused inventory entered early in the morning by one cashier
+// to be saved under the previous day's key, making it invisible to the next
+// cashier checking "today's" inventory.
+function getLocalDateKey(d = new Date()) {
+  const tzOffsetMs = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tzOffsetMs).toISOString().split('T')[0];
+}
+
+
 // =================== CASHIER/SHIFT STATE ===================
 let activeCashier = null; // { id, name, pin }
 
@@ -121,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const ownerSummaryDate = document.getElementById('ownerSummaryDate');
   if (filterDate) filterDate.value = today;
   if (summaryDate) summaryDate.value = today;
-  if (inventoryDate) inventoryDate.value = today;
+  if (inventoryDate) inventoryDate.value = getLocalDateKey();
   if (ownerSummaryDate) ownerSummaryDate.value = today;
 
   // Always show cashier login first
@@ -725,7 +737,7 @@ function clearOrder() {
 // =================== AUTO-DEDUCT INVENTORY ===================
 function autoDeductIngredients(soldItems) {
   try {
-    const dateKey = new Date().toISOString().split('T')[0];
+    const dateKey = getLocalDateKey();
     const data = loadInventoryData();
     if (!data[dateKey]) return; // No inventory set for today, skip
     const dayData = data[dateKey];
@@ -767,7 +779,7 @@ function autoDeductIngredients(soldItems) {
 // Helper: get remaining stock for an ingredient today (opening.qty - usedQty)
 function getRemainingStock(ingredientName) {
   try {
-    const dateKey = new Date().toISOString().split('T')[0];
+    const dateKey = getLocalDateKey();
     const data = loadInventoryData();
     const ing = (data[dateKey]?.opening?.ingredients || []).find(
       i => i.name.toLowerCase() === ingredientName.toLowerCase()
@@ -1137,7 +1149,7 @@ function renderReports() {
   if (toLabel) toLabel.style.display = period === 'custom' ? '' : 'none';
 
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = getLocalDateKey(today);
   let startDate, endDate;
 
   if (period === 'daily') {
@@ -1146,11 +1158,11 @@ function renderReports() {
   } else if (period === 'weekly') {
     const day = today.getDay();
     const mon = new Date(today); mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-    startDate = mon.toISOString().split('T')[0];
+    startDate = getLocalDateKey(mon);
     endDate   = todayStr;
     document.getElementById('reportPeriodLabel').textContent = 'Week of ' + mon.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' – ' + today.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
   } else if (period === 'monthly') {
-    startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    startDate = getLocalDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
     endDate   = todayStr;
     document.getElementById('reportPeriodLabel').textContent = today.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' });
   } else if (period === 'yearly') {
@@ -2055,12 +2067,12 @@ function seedOpeningFromLastClosing(dateKey, invData) {
 }
 
 function getTodayInvKey() {
-  const d = document.getElementById('inventoryDate')?.value || new Date().toISOString().split('T')[0];
+  const d = document.getElementById('inventoryDate')?.value || getLocalDateKey();
   return d;
 }
 // Alias used by recipe row renderer
 function getInvData() { return loadInventoryData(); }
-function getTodayKey() { return new Date().toISOString().split('T')[0]; }
+function getTodayKey() { return getLocalDateKey(); }
 
 let invModalType = 'opening'; // 'opening' | 'closing'
 // Two separate arrays for the two sections
