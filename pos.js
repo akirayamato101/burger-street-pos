@@ -1637,16 +1637,14 @@ function confirmClearData() {
     if (!confirmed) return;
     const confirmed2 = window.confirm('Last chance — are you absolutely sure?');
     if (!confirmed2) return;
-    // Clear all cashier data
-    const cashiers = getCashiers();
-    cashiers.forEach(c => {
-      localStorage.removeItem(getCashierStorageKey(c.id));
-      localStorage.removeItem(getCashierInvKey(c.id));
-    });
-    localStorage.removeItem(CASHIERS_KEY);
-    localStorage.removeItem(OWNER_GLOBAL_KEY);
-    localStorage.removeItem(INV_STORE_KEY);
-    localStorage.removeItem(SHARED_DELIVERY_KEY);
+    // Remove ALL keys belonging to this app (catches orphaned cashier keys too)
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('burgerStreet')) keysToRemove.push(key);
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    localStorage.removeItem(INV_KEY); // legacy key
     showToast('All data cleared. Restarting...', 'success');
     setTimeout(() => location.reload(), 1500);
   };
