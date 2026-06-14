@@ -414,7 +414,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:0.68rem;color:var(--text3);font-weight:700;letter-spacing:1px;">📅 VIEWING DATE</label>
-              <input type="date" class="input-field" id="inventoryDate" onchange="renderInventory()" />
+              <input type="date" class="input-field" id="inventoryDate" onchange="currentShiftIndex = -1; renderInventory()" />
             </div>
             <button class="btn btn-outline btn-sm" id="btnInvPrev" onclick="shiftInventoryDate(-1)" style="padding:6px 10px;">◀ Prev</button>
             <button class="btn btn-outline btn-sm" id="btnInvNext" onclick="shiftInventoryDate(1)" style="padding:6px 10px;">Next ▶</button>
