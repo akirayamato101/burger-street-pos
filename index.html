@@ -412,7 +412,12 @@
         <div class="page-header-bar">
           <h3 class="section-title">📦 Daily Inventory</h3>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input type="date" class="input-field" id="inventoryDate" onchange="renderInventory()" />
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:0.68rem;color:var(--text3);font-weight:700;letter-spacing:1px;">📅 VIEWING DATE</label>
+              <input type="date" class="input-field" id="inventoryDate" onchange="renderInventory()" />
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="shiftInventoryDate(-1)" title="Previous day" style="padding:6px 10px;">◀ Prev</button>
+            <button class="btn btn-outline btn-sm" onclick="shiftInventoryDate(1)" title="Next day" style="padding:6px 10px;">Next ▶</button>
             <button class="btn btn-primary" onclick="openInvModal('opening')" id="btnSetOpening">+ Set Opening Inventory</button>
           </div>
         </div>
@@ -641,7 +646,7 @@
         <!-- Per-item inventory totals table -->
         <div class="dash-section">
           <h4 class="section-title" style="margin-bottom:6px;">🥩 Inventory Item Totals — All Cashiers</h4>
-          <p style="font-size:0.82rem;color:var(--text3);margin-bottom:14px;">Opening & closing counts per item, summed across all cashiers for the selected period.</p>
+          <p style="font-size:0.82rem;color:var(--text3);margin-bottom:14px;">Opening & closing counts per item, summed across all cashiers for the selected period. <strong style="color:var(--orange);">Short</strong> = difference between closing record and actual physical recount. <em style="color:var(--text3);">(est.) = estimated from sales data when no recount was entered.</em></p>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
