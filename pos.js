@@ -2201,22 +2201,37 @@ function renderInvModal() {
 
   } else {
     // Closing ingredients: show opening qty, input closing qty
-    ingHeader.style.gridTemplateColumns = '1fr 80px 100px 100px';
+    ingHeader.style.gridTemplateColumns = '1fr 70px 90px 90px 90px';
     ingHeader.innerHTML = `
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">INGREDIENT / SUPPLY</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">UNIT</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;color:var(--blue);">STARTED WITH</span>
-      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;color:var(--green);">LEFT OVER</span>`;
+      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;color:var(--green);">LEFT OVER</span>
+      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;color:var(--orange);">ACTUAL COUNT</span>`;
 
-    ingList.innerHTML = invIngredients.map((ing, idx) => `
-      <div style="display:grid;grid-template-columns:1fr 80px 100px 100px;gap:8px;align-items:center;margin-bottom:8px;">
+    ingList.innerHTML = invIngredients.map((ing, idx) => {
+      const leftOver = ing.closingQty ?? ing.qty ?? 0;
+      const actual = ing.actualQty ?? '';
+      const hasActual = ing.actualQty !== undefined && ing.actualQty !== null && ing.actualQty !== '';
+      const diff = hasActual ? (ing.actualQty - leftOver) : null;
+      const diffColor = diff === null ? '' : diff === 0 ? 'var(--green)' : 'var(--red)';
+      const diffLabel = diff === null ? '' : diff === 0 ? '✓' : (diff > 0 ? `+${diff}` : `${diff}`);
+      return `
+      <div style="display:grid;grid-template-columns:1fr 70px 90px 90px 90px;gap:8px;align-items:center;margin-bottom:8px;">
         <div style="font-weight:700;font-size:0.88rem;">${escHtml(ing.name||'Item')}</div>
         <div style="font-size:0.8rem;color:var(--text3);text-align:center;">${escHtml(ing.unit||'pcs')}</div>
         <div style="text-align:center;font-weight:800;color:var(--blue);font-size:0.95rem;">${ing.qty||0}</div>
-        <input type="number" class="input-field" value="${ing.closingQty ?? ing.qty ?? 0}" min="0" step="1" placeholder="0"
-          style="padding:7px 10px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--green);border-color:rgba(16,185,129,0.4);"
-          oninput="invIngredients[${idx}].closingQty=parseInt(this.value)||0" />
-      </div>`).join('');
+        <input type="number" class="input-field" value="${leftOver}" min="0" step="1" placeholder="0"
+          style="padding:7px 6px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--green);border-color:rgba(16,185,129,0.4);"
+          oninput="invIngredients[${idx}].closingQty=parseInt(this.value)||0;renderInvModal()" />
+        <div style="position:relative;">
+          <input type="number" class="input-field" value="${hasActual ? ing.actualQty : ''}" min="0" step="1" placeholder="recount"
+            style="padding:7px 6px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--orange);border-color:rgba(251,146,60,0.4);width:100%;"
+            oninput="invIngredients[${idx}].actualQty=this.value===''?null:parseInt(this.value);renderInvModal()" />
+          ${diffLabel ? `<div style="position:absolute;right:4px;bottom:-16px;font-size:0.68rem;font-weight:800;color:${diffColor};">${diffLabel}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
   }
 
   document.getElementById('invIngBadge').textContent = `${invIngredients.length} item${invIngredients.length !== 1 ? 's' : ''}`;
@@ -2541,9 +2556,15 @@ function renderInventory() {
       const endQty   = clI ? (clI.closingQty ?? clI.qty ?? 0) : 0;
       const usedQty  = Math.max(0, startQty - endQty);
       const unit     = opI ? (opI.unit||'pcs') : (clI ? clI.unit||'pcs' : 'pcs');
+      const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
+      const actualQty = hasActual ? clI.actualQty : null;
+      const variance  = hasActual ? (actualQty - endQty) : null;
+      const varianceColor = variance === null ? '' : variance === 0 ? 'var(--green)' : 'var(--red)';
+      const varianceLabel = variance === null ? '—' : variance === 0 ? '✓ Match' : (variance > 0 ? `+${variance} over` : `${variance} short`);
 
       let statusTag = '';
-      if (usedQty === 0 && startQty > 0) statusTag = `<span class="inv-status-tag inv-tag-ok">✓ Full</span>`;
+      if (variance !== null && variance !== 0) statusTag = `<span class="inv-status-tag inv-tag-low">⚠️ Variance</span>`;
+      else if (usedQty === 0 && startQty > 0) statusTag = `<span class="inv-status-tag inv-tag-ok">✓ Full</span>`;
       else if (endQty === 0 && startQty > 0) statusTag = `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`;
       else if (endQty < startQty * 0.2 && startQty > 0) statusTag = `<span class="inv-status-tag inv-tag-low">⚡ Low</span>`;
       else statusTag = `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
@@ -2553,8 +2574,9 @@ function renderInventory() {
         <td style="color:var(--orange);">${startQty} ${escHtml(unit)}</td>
         <td style="color:var(--green);">${endQty} ${escHtml(unit)}</td>
         <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty+' '+escHtml(unit) : '—'}</td>
+        <td style="color:var(--orange);font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">not recounted</span>'}</td>
+        <td style="color:${varianceColor};font-weight:800;">${varianceLabel}</td>
         <td>${statusTag}</td>
-        <td>—</td>
       </tr>`;
     });
 
