@@ -414,18 +414,13 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:0.68rem;color:var(--text3);font-weight:700;letter-spacing:1px;">📅 VIEWING DATE</label>
-              <input type="date" class="input-field" id="inventoryDate" onchange="currentShiftIndex = -1; renderInventory()" />
+              <input type="date" class="input-field" id="inventoryDate" onchange="renderInventory()" />
             </div>
             <button class="btn btn-outline btn-sm" id="btnInvPrev" onclick="shiftInventoryDate(-1)" style="padding:6px 10px;">◀ Prev</button>
             <button class="btn btn-outline btn-sm" id="btnInvNext" onclick="shiftInventoryDate(1)" style="padding:6px 10px;">Next ▶</button>
             <button class="btn btn-primary" onclick="openInvModal('opening')" id="btnSetOpening">+ Set Opening Inventory</button>
           </div>
-          <!-- Shift navigator — shown only when a day has multiple shifts -->
-          <div id="invShiftNav" style="display:none;margin-top:10px;padding:8px 12px;background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.3);border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-            <button class="btn btn-outline btn-sm" id="btnShiftPrev" onclick="shiftInventoryDate(-1)" style="padding:5px 14px;font-size:0.82rem;">◀ Prev Shift</button>
-            <span id="invShiftBadge" style="font-size:0.85rem;font-weight:800;color:var(--orange);text-align:center;flex:1;"></span>
-            <button class="btn btn-outline btn-sm" id="btnShiftNext" onclick="shiftInventoryDate(1)" style="padding:5px 14px;font-size:0.82rem;">Next Shift ▶</button>
-          </div>
+
         </div>
 
         <!-- Status Banner -->
