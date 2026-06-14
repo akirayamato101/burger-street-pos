@@ -617,6 +617,8 @@
               <option value="yearly">This Year</option>
               <option value="custom">Custom Range</option>
             </select>
+            <button class="btn btn-outline btn-sm" onclick="shiftReportDate(-1)" title="Previous inventory record" style="padding:6px 10px;">◀ Prev</button>
+            <button class="btn btn-outline btn-sm" onclick="shiftReportDate(1)" title="Next inventory record" style="padding:6px 10px;">Next ▶</button>
             <input type="date" class="input-field" id="reportFrom" onchange="renderReports()" style="display:none" />
             <span id="reportToLabel" style="display:none;color:var(--text3);font-size:0.85rem;">to</span>
             <input type="date" class="input-field" id="reportTo" onchange="renderReports()" style="display:none" />
