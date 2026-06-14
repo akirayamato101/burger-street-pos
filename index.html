@@ -414,10 +414,11 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:0.68rem;color:var(--text3);font-weight:700;letter-spacing:1px;">📅 VIEWING DATE</label>
-              <input type="date" class="input-field" id="inventoryDate" onchange="renderInventory()" />
+              <input type="date" class="input-field" id="inventoryDate" onchange="currentShiftIndex = -1; renderInventory()" />
             </div>
-            <button class="btn btn-outline btn-sm" onclick="shiftInventoryDate(-1)" title="Previous day" style="padding:6px 10px;">◀ Prev</button>
-            <button class="btn btn-outline btn-sm" onclick="shiftInventoryDate(1)" title="Next day" style="padding:6px 10px;">Next ▶</button>
+            <button class="btn btn-outline btn-sm" onclick="shiftInventoryDate(-1)" title="Previous shift / day" style="padding:6px 10px;">◀ Prev</button>
+            <span id="invShiftBadge" style="display:none;font-size:0.75rem;font-weight:700;color:var(--orange);background:rgba(251,146,60,0.12);border:1px solid rgba(251,146,60,0.35);border-radius:20px;padding:3px 10px;white-space:nowrap;"></span>
+            <button class="btn btn-outline btn-sm" onclick="shiftInventoryDate(1)" title="Next shift / day" style="padding:6px 10px;">Next ▶</button>
             <button class="btn btn-primary" onclick="openInvModal('opening')" id="btnSetOpening">+ Set Opening Inventory</button>
           </div>
         </div>
