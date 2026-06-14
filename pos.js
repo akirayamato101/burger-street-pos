@@ -739,14 +739,12 @@ function autoDeductIngredients(soldItems) {
   try {
     const dateKey = getLocalDateKey();
     const data = loadInventoryData();
-    if (!data[dateKey]) return; // No inventory set for today, skip
-    const dayData = data[dateKey];
-    if (!dayData.opening || !dayData.opening.ingredients || !dayData.opening.ingredients.length) return;
+    if (!data[dateKey]) return;
+    const activeShift = getActiveShift(dateKey, data);
+    if (!activeShift || !activeShift.opening || !activeShift.opening.ingredients || !activeShift.opening.ingredients.length) return;
 
-    // Ensure usedQty tracker exists on each ingredient (never modifies opening.qty)
-    dayData.opening.ingredients.forEach(ing => {
-      if (ing.usedQty === undefined) ing.usedQty = 0;
-    });
+    const openingIngs = activeShift.opening.ingredients;
+    openingIngs.forEach(ing => { if (ing.usedQty === undefined) ing.usedQty = 0; });
 
     let changed = false;
     soldItems.forEach(item => {
@@ -754,34 +752,28 @@ function autoDeductIngredients(soldItems) {
       if (!product || !product.recipe || !product.recipe.length) return;
       product.recipe.forEach(recipeItem => {
         const totalDeduct = recipeItem.qty * item.qty;
-        const ing = dayData.opening.ingredients.find(
-          i => i.name.toLowerCase() === recipeItem.ingredient.toLowerCase()
-        );
+        const ing = openingIngs.find(i => i.name.toLowerCase() === recipeItem.ingredient.toLowerCase());
         if (ing) {
-          const openingQty  = ing.qty || 0;        // original stock — never changes
-          const alreadyUsed = ing.usedQty || 0;
-          const available   = Math.max(0, openingQty - alreadyUsed);
-          const actualDeduct = Math.min(totalDeduct, available); // cap at what's left
-          ing.usedQty = alreadyUsed + actualDeduct;
+          const available = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
+          ing.usedQty = (ing.usedQty || 0) + Math.min(totalDeduct, available);
           changed = true;
         }
       });
     });
 
-    if (changed) {
-      saveInventoryData(data);
-    }
+    if (changed) saveInventoryData(data);
   } catch(e) {
     console.warn('autoDeductIngredients error:', e);
   }
 }
 
-// Helper: get remaining stock for an ingredient today (opening.qty - usedQty)
+// Helper: get remaining stock for an ingredient in the active shift today
 function getRemainingStock(ingredientName) {
   try {
     const dateKey = getLocalDateKey();
     const data = loadInventoryData();
-    const ing = (data[dateKey]?.opening?.ingredients || []).find(
+    const activeShift = getActiveShift(dateKey, data);
+    const ing = (activeShift?.opening?.ingredients || []).find(
       i => i.name.toLowerCase() === ingredientName.toLowerCase()
     );
     if (!ing) return null;
@@ -1186,11 +1178,16 @@ function renderReports() {
     const sharedInv = loadInventoryData();
     for (const [date, dayData] of Object.entries(sharedInv)) {
       if (date < startDate || date > endDate) continue;
-      if (dayData.opening) {
-        allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [] });
-      }
-      if (dayData.closing) {
-        allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [] });
+      if (dayData.shifts && dayData.shifts.length) {
+        // Multi-shift format: aggregate all shifts for this day
+        dayData.shifts.forEach((shift, si) => {
+          if (shift.opening) allInvRecords.push({ date, cashierName: shift.opening.cashier || BIZ_NAME, type: 'opening', items: shift.opening.ingredients || [], amounts: shift.opening.amounts || [], shiftIdx: si });
+          if (shift.closing) allInvRecords.push({ date, cashierName: shift.closing.cashier || BIZ_NAME, type: 'closing', items: shift.closing.ingredients || [], amounts: shift.closing.amounts || [], shiftIdx: si });
+        });
+      } else {
+        // Legacy single opening/closing
+        if (dayData.opening) allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [] });
+        if (dayData.closing) allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [] });
       }
     }
   } catch(e) {}
@@ -2038,33 +2035,80 @@ function saveSharedDeliveries(arr) {
   try { localStorage.setItem(SHARED_DELIVERY_KEY, JSON.stringify(arr)); } catch(e) {}
 }
 
-// Auto-seed today's opening from the most recent previous closing.
+// Returns the active shift for a dateKey from the inventory data.
+// A "day" can have multiple shifts: data[dateKey].shifts = [{opening, closing, cashier, startedAt}, ...]
+// For backward compat, a day with only data[dateKey].opening/closing is treated as shifts[0].
+function getDayShifts(dateKey, data) {
+  const dayData = data[dateKey] || {};
+  if (dayData.shifts && dayData.shifts.length) return dayData.shifts;
+  // Migrate legacy single opening/closing to shifts array format (read-only, don't save)
+  const shift = {};
+  if (dayData.opening) shift.opening = dayData.opening;
+  if (dayData.closing) shift.closing = dayData.closing;
+  return Object.keys(shift).length ? [shift] : [];
+}
+
+function getActiveShift(dateKey, data) {
+  const shifts = getDayShifts(dateKey, data);
+  if (!shifts.length) return null;
+  return shifts[shifts.length - 1]; // last shift is active
+}
+
+// Auto-seed today's opening from the most recent previous closing (or last shift on same day).
 // Called when opening the inventory page if no opening exists for today.
 function seedOpeningFromLastClosing(dateKey, invData) {
-  // Find the most recent date before dateKey that has a closing
-  const dates = Object.keys(invData)
-    .filter(d => d < dateKey && invData[d].closing)
-    .sort();
-  if (!dates.length) return; // no previous closing found
-  const lastDate = dates[dates.length - 1];
-  const lastClosing = invData[lastDate].closing;
-  // Build an opening from the last closing quantities
+  const shifts = getDayShifts(dateKey, invData);
+  // If there's already a shift today with an opening, don't re-seed
+  if (shifts.length && shifts[shifts.length - 1].opening) return;
+
+  // Look for last closing — could be a previous shift on the same day or a previous day
+  let lastClosing = null;
+  let seededFrom = null;
+
+  // Check other shifts on same day first
+  if (shifts.length > 1) {
+    const prev = shifts[shifts.length - 2];
+    if (prev.closing) { lastClosing = prev.closing; seededFrom = dateKey; }
+  }
+
+  // Otherwise look at previous days
+  if (!lastClosing) {
+    const dates = Object.keys(invData)
+      .filter(d => d < dateKey)
+      .sort();
+    for (let i = dates.length - 1; i >= 0; i--) {
+      const prevShifts = getDayShifts(dates[i], invData);
+      const lastPrevShift = prevShifts[prevShifts.length - 1];
+      if (lastPrevShift && lastPrevShift.closing) {
+        lastClosing = lastPrevShift.closing;
+        seededFrom = dates[i];
+        break;
+      }
+    }
+  }
+
+  if (!lastClosing) return;
+
   const newOpening = {
     ingredients: (lastClosing.ingredients || []).map(i => ({
-      name: i.name,
-      unit: i.unit,
-      qty: i.closingQty ?? i.qty ?? 0
+      name: i.name, unit: i.unit, qty: i.closingQty ?? i.qty ?? 0
     })),
     amounts: (lastClosing.amounts || []).map(a => ({
-      name: a.name,
-      amount: a.closingAmount ?? a.amount ?? 0
+      name: a.name, amount: a.closingAmount ?? a.amount ?? 0
     })),
-    seededFrom: lastDate
+    seededFrom
   };
+
   if (!invData[dateKey]) invData[dateKey] = {};
-  invData[dateKey].opening = newOpening;
+  // Save as shifts array
+  if (!invData[dateKey].shifts) invData[dateKey].shifts = [{}];
+  invData[dateKey].shifts[invData[dateKey].shifts.length - 1].opening = newOpening;
+  // Clear legacy keys to avoid confusion
+  delete invData[dateKey].opening;
+  delete invData[dateKey].closing;
   saveInventoryData(invData);
 }
+
 
 function getTodayInvKey() {
   const d = document.getElementById('inventoryDate')?.value || getLocalDateKey();
@@ -2085,14 +2129,13 @@ function openInvModal(type) {
   invModalType = type;
   const dateKey = getTodayInvKey();
   const data = loadInventoryData();
-  const dayData = data[dateKey] || {};
+  const activeShift = getActiveShift(dateKey, data) || {};
 
   document.getElementById('invModalTitle').textContent =
     type === 'opening' ? '🌅 Set Opening Inventory' : '🌙 Set Closing Inventory';
 
   if (type === 'opening') {
-    // Load existing opening or defaults
-    const op = dayData.opening || {};
+    const op = activeShift.opening || {};
     invIngredients = (op.ingredients || [
       { name: 'Burger Patty', unit: 'pcs', qty: 0 },
       { name: 'Burger Buns',  unit: 'pcs', qty: 0 },
@@ -2101,40 +2144,25 @@ function openInvModal(type) {
     invAmounts = (op.amounts || [
       { name: 'Pocket Money / Change', amount: 0 }
     ]).map(a => ({...a}));
-
-    // Descriptions for opening
     document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply do you have for today? (count in pieces, packs, bags, etc.)';
     document.getElementById('invAmtDesc').textContent = 'Enter the peso amount for today. (e.g. pocket money for change, petty cash, fund)';
-
   } else {
-    // Closing — pre-fill from opening, or load existing closing
-    const op = dayData.opening || {};
-    const cl = dayData.closing || {};
-
+    const op = activeShift.opening || {};
+    const cl = activeShift.closing || {};
     if (cl.ingredients && cl.ingredients.length) {
       invIngredients = cl.ingredients.map(i => ({...i}));
     } else {
-      // seed from opening; closing adds closingQty (pre-filled with remaining stock after sales)
       invIngredients = (op.ingredients || []).map(i => ({
-        ...i,
-        closingQty: Math.max(0, (i.qty||0) - (i.usedQty||0))
+        ...i, closingQty: Math.max(0, (i.qty||0) - (i.usedQty||0))
       }));
     }
-
     if (cl.amounts && cl.amounts.length) {
       invAmounts = cl.amounts.map(a => ({...a}));
     } else {
-      // seed from opening amounts
-      invAmounts = (op.amounts || []).map(a => ({
-        ...a,
-        closingAmount: a.amount,
-        notes: ''
-      }));
+      invAmounts = (op.amounts || []).map(a => ({...a, closingAmount: a.amount, notes: ''}));
     }
-
-    // Descriptions for closing
-    document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply is LEFT at the end of the day?';
-    document.getElementById('invAmtDesc').textContent = 'How much cash / amount is LEFT at the end of the day?';
+    document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply is LEFT at the end of the shift?';
+    document.getElementById('invAmtDesc').textContent = 'How much cash / amount is LEFT at the end of the shift?';
   }
 
   renderInvModal();
@@ -2272,15 +2300,29 @@ function saveInvModal() {
   const data = loadInventoryData();
   if (!data[dateKey]) data[dateKey] = {};
 
+  // Ensure shifts array exists; migrate legacy opening/closing
+  if (!data[dateKey].shifts) {
+    const legacy = {};
+    if (data[dateKey].opening) { legacy.opening = data[dateKey].opening; delete data[dateKey].opening; }
+    if (data[dateKey].closing) { legacy.closing = data[dateKey].closing; delete data[dateKey].closing; }
+    data[dateKey].shifts = [legacy];
+  }
+
+  const shiftIdx = data[dateKey].shifts.length - 1;
+  const shift = data[dateKey].shifts[shiftIdx];
+  const cashierName = activeCashier?.name || BIZ_NAME;
+
   if (invModalType === 'opening') {
     const ings = invIngredients.filter(i => i.name && i.name.trim());
     const amts = invAmounts.filter(a => a.name && a.name.trim());
     if (!ings.length && !amts.length) { showToast('Please add at least one item.', 'error'); return; }
-    data[dateKey].opening = { ingredients: ings, amounts: amts };
+    shift.opening = { ingredients: ings, amounts: amts, cashier: cashierName, savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'}) };
   } else {
-    data[dateKey].closing = {
+    shift.closing = {
       ingredients: invIngredients.map(i => ({...i})),
-      amounts: invAmounts.map(a => ({...a}))
+      amounts: invAmounts.map(a => ({...a})),
+      cashier: cashierName,
+      savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'})
     };
   }
 
@@ -2290,17 +2332,64 @@ function saveInvModal() {
   showToast(invModalType === 'opening' ? '✅ Opening inventory saved!' : '✅ Closing inventory saved!', 'success');
 }
 
+// Called when a cashier clicks "Start New Shift" — seeds a new shift from current closing
+function startNewShift() {
+  const dateKey = getTodayInvKey();
+  const data = loadInventoryData();
+  if (!data[dateKey]) return;
+
+  // Ensure shifts array
+  if (!data[dateKey].shifts) {
+    const legacy = {};
+    if (data[dateKey].opening) { legacy.opening = data[dateKey].opening; delete data[dateKey].opening; }
+    if (data[dateKey].closing) { legacy.closing = data[dateKey].closing; delete data[dateKey].closing; }
+    data[dateKey].shifts = [legacy];
+  }
+
+  const lastShift = data[dateKey].shifts[data[dateKey].shifts.length - 1];
+  if (!lastShift.closing) {
+    showToast('Please set a closing inventory for the current shift first.', 'error');
+    return;
+  }
+
+  // Build new opening from last shift's closing
+  const lastClosing = lastShift.closing;
+  const cashierName = activeCashier?.name || BIZ_NAME;
+  const newShift = {
+    opening: {
+      ingredients: (lastClosing.ingredients || []).map(i => ({
+        name: i.name, unit: i.unit, qty: i.closingQty ?? i.qty ?? 0
+      })),
+      amounts: (lastClosing.amounts || []).map(a => ({
+        name: a.name, amount: a.closingAmount ?? a.amount ?? 0
+      })),
+      seededFrom: 'previous shift',
+      cashier: cashierName,
+      savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'})
+    }
+  };
+
+  data[dateKey].shifts.push(newShift);
+  saveInventoryData(data);
+  renderInventory();
+  showToast(`✅ New shift started! Opening seeded from previous shift's closing.`, 'success');
+}
+
 function renderInventory() {
   const dateKey = getTodayInvKey();
   let data = loadInventoryData();
-  // Auto-seed opening from last shift closing if not yet set for today
-  if (!data[dateKey] || !data[dateKey].opening) {
+  // Auto-seed opening from last shift closing if not yet set
+  const existingShifts = getDayShifts(dateKey, data);
+  if (!existingShifts.length || !existingShifts[existingShifts.length - 1].opening) {
     seedOpeningFromLastClosing(dateKey, data);
-    data = loadInventoryData(); // reload after potential mutation
+    data = loadInventoryData();
   }
-  const dayData = data[dateKey] || {};
-  const op = dayData.opening || {};
-  const cl = dayData.closing || {};
+
+  const dayShifts = getDayShifts(dateKey, data);
+  const shiftCount = dayShifts.length;
+  const activeShift = dayShifts[shiftCount - 1] || {};
+  const op = activeShift.opening || {};
+  const cl = activeShift.closing || {};
 
   const openIngredients = op.ingredients || [];
   const openAmounts     = op.amounts     || [];
@@ -2414,6 +2503,19 @@ function renderInventory() {
         <span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal)}</span></div>`;
     }
 
+    // Cashier tag for closing
+    if (cl.cashier) {
+      closeHTML = `<div style=\"font-size:0.75rem;color:var(--text3);margin-bottom:10px;\">👤 <b>${escHtml(cl.cashier)}</b>${cl.savedAt ? ' · ' + cl.savedAt : ''}</div>` + closeHTML;
+    }
+    // Start New Shift button — only on today
+    const _todayKey = getLocalDateKey();
+    if (dateKey === _todayKey) {
+      closeHTML += `<div style=\"margin-top:16px;\">
+        <button class=\"btn btn-primary\" style=\"width:100%;font-size:0.88rem;\" onclick=\"startNewShift()\">
+          🔄 Start New Shift (Next Cashier)
+        </button>
+      </div>`;
+    }
     closingList.innerHTML = closeHTML;
     document.getElementById('btnSetClosing').textContent = '✏️ Edit';
     document.getElementById('btnSetClosing').className = 'btn btn-outline btn-sm';
