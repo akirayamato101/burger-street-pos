@@ -1283,7 +1283,7 @@ function renderReports() {
         itemMap[nm].cashiers.add(rec.cashierName);
       } else {
         // Overwrite with the LAST closing record for the same reason as above.
-        itemMap[nm].totalClosing = (parseFloat(am.closingAmount ?? am.amount) || 0);
+        itemMap[nm].totalClosing = (am.actualAmount !== null && am.actualAmount !== undefined && am.actualAmount !== '') ? (parseFloat(am.actualAmount)||0) : (parseFloat(am.closingAmount ?? am.amount) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
         if (am.actualAmount !== undefined && am.actualAmount !== null && am.actualAmount !== '') {
           itemMap[nm].totalActual = (parseFloat(am.actualAmount) || 0);
@@ -2531,16 +2531,16 @@ function removeAmount(idx) {
   renderInvModal();
 }
 
+// Returns actualAmount if entered, otherwise closingAmount. Use this everywhere we display/sum closing cash.
+function effectiveAmt(a) {
+  const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
+  return hasActual ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0);
+}
+
 function updateInvTotal() {
   // Total = sum of all amounts (peso values only; qty is just count, no peso value)
   const isClosing = invModalType === 'closing';
-  const total = invAmounts.reduce((s, a) => {
-    if (isClosing) {
-      const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
-      return s + (hasActual ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0));
-    }
-    return s + (a.amount||0);
-  }, 0);
+  const total = invAmounts.reduce((s, a) => s + (isClosing ? effectiveAmt(a) : (a.amount||0)), 0);
   const el = document.getElementById('invModalTotalLabel');
   if (el) el.textContent = `Cash Total: ₱${fmt(total)}`;
 }
@@ -2737,7 +2737,7 @@ function renderInventory() {
     dayShifts.forEach((s, i) => {
       const sOp = s.opening || {}, sCl = s.closing || {};
       const openAmt = (sOp.amounts || []).reduce((a, x) => a + (x.amount||0), 0);
-      const closeAmt = (sCl.amounts || []).reduce((a, x) => a + (x.closingAmount||0), 0);
+      const closeAmt = (sCl.amounts || []).reduce((a, x) => a + effectiveAmt(x), 0);
       const sOpIng = sOp.ingredients || [];
       const sClIng = sCl.ingredients || [];
       const hasCl = (sCl.ingredients && sCl.ingredients.length) || (sCl.amounts && sCl.amounts.length);
@@ -2788,10 +2788,7 @@ function renderInventory() {
 
   // ── Summary cards for the selected shift ────────────────────────────────
   const openAmtTotal  = openAmounts.reduce((s, a) => s + (a.amount||0), 0);
-  const closeAmtTotal = closeAmounts.reduce((s, a) => {
-    const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
-    return s + (hasActual ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0));
-  }, 0);
+  const closeAmtTotal = closeAmounts.reduce((s, a) => s + effectiveAmt(a), 0);
   const usedAmt = Math.max(0, openAmtTotal - closeAmtTotal);
 
   document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
@@ -2853,15 +2850,11 @@ function renderInventory() {
     }
     if (closeAmounts.length) {
       closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;">💵 Cash Left</div>`;
-      closeHTML += closeAmounts.map(a => {
-        const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
-        const displayAmt = hasActual ? parseFloat(a.actualAmount) : (a.closingAmount||0);
-        return `
+      closeHTML += closeAmounts.map(a => `
         <div class="inv-list-item">
           <div><span style="font-weight:700;">${escHtml(a.name)}</span>${a.notes ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(a.notes)}</span>` : ''}</div>
-          <span style="font-weight:800;color:var(--green);">₱${fmt(displayAmt)}</span>
-        </div>`;
-      }).join('');
+          <span style="font-weight:800;color:var(--green);">₱${fmt(effectiveAmt(a))}</span>
+        </div>`).join('');
       closeHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal)}</span></div>`;
     }
     if (isToday && viewIdx === shiftCount - 1) {
@@ -2979,7 +2972,7 @@ function renderInventory() {
         const opA = (s.opening?.amounts||[]).find(a => a.name === name);
         const clA = (s.closing?.amounts||[]).find(a => a.name === name);
         const startAmt = opA ? (opA.amount||0) : 0;
-        const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
+        const endAmt   = clA ? effectiveAmt(clA) : 0;
         const usedAmt2 = Math.max(0, startAmt - endAmt);
         const notes    = clA?.notes || '';
         const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
@@ -3006,7 +2999,7 @@ function renderInventory() {
           const opA = (s.opening?.amounts||[]).find(a => a.name === name);
           const clA = (s.closing?.amounts||[]).find(a => a.name === name);
           const startAmt = opA ? (opA.amount||0) : 0;
-          const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
+          const endAmt   = clA ? effectiveAmt(clA) : 0;
           const usedAmt2 = opA ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
           cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
@@ -3030,7 +3023,7 @@ function renderInventory() {
 
     // Balance check — sum across all shifts
     const totalOpenCash  = dayShifts.reduce((s, sh) => s + (sh.opening?.amounts||[]).reduce((a, x) => a + (x.amount||0), 0), 0);
-    const totalCloseCash = dayShifts.reduce((s, sh) => s + (sh.closing?.amounts||[]).reduce((a, x) => a + (x.closingAmount||0), 0), 0);
+    const totalCloseCash = dayShifts.reduce((s, sh) => s + (sh.closing?.amounts||[]).reduce((a, x) => a + effectiveAmt(x), 0), 0);
     const totalUsedCash  = Math.max(0, totalOpenCash - totalCloseCash);
     const isBalanced = Math.abs(totalOpenCash - totalCloseCash - totalUsedCash) < 0.01;
     const balanceEl = document.getElementById('invBalanceCheck');
