@@ -1283,7 +1283,7 @@ function renderReports() {
         itemMap[nm].cashiers.add(rec.cashierName);
       } else {
         // Overwrite with the LAST closing record for the same reason as above.
-        itemMap[nm].totalClosing = (am.actualAmount !== null && am.actualAmount !== undefined && am.actualAmount !== '') ? (parseFloat(am.actualAmount)||0) : (parseFloat(am.closingAmount ?? am.amount) || 0);
+        itemMap[nm].totalClosing = (parseFloat(am.closingAmount ?? am.amount) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
         if (am.actualAmount !== undefined && am.actualAmount !== null && am.actualAmount !== '') {
           itemMap[nm].totalActual = (parseFloat(am.actualAmount) || 0);
@@ -2531,16 +2531,10 @@ function removeAmount(idx) {
   renderInvModal();
 }
 
-// Returns actualAmount if entered, otherwise closingAmount. Use this everywhere we display/sum closing cash.
-function effectiveAmt(a) {
-  const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
-  return hasActual ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0);
-}
-
 function updateInvTotal() {
   // Total = sum of all amounts (peso values only; qty is just count, no peso value)
   const isClosing = invModalType === 'closing';
-  const total = invAmounts.reduce((s, a) => s + (isClosing ? effectiveAmt(a) : (a.amount||0)), 0);
+  const total = invAmounts.reduce((s, a) => s + (isClosing ? ((a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '') ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0)) : (a.amount||0)), 0);
   const el = document.getElementById('invModalTotalLabel');
   if (el) el.textContent = `Cash Total: ₱${fmt(total)}`;
 }
@@ -2737,7 +2731,7 @@ function renderInventory() {
     dayShifts.forEach((s, i) => {
       const sOp = s.opening || {}, sCl = s.closing || {};
       const openAmt = (sOp.amounts || []).reduce((a, x) => a + (x.amount||0), 0);
-      const closeAmt = (sCl.amounts || []).reduce((a, x) => a + effectiveAmt(x), 0);
+      const closeAmt = (sCl.amounts || []).reduce((a, x) => a + ((x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '') ? (parseFloat(x.actualAmount)||0) : (x.closingAmount||0)), 0);
       const sOpIng = sOp.ingredients || [];
       const sClIng = sCl.ingredients || [];
       const hasCl = (sCl.ingredients && sCl.ingredients.length) || (sCl.amounts && sCl.amounts.length);
@@ -2788,7 +2782,7 @@ function renderInventory() {
 
   // ── Summary cards for the selected shift ────────────────────────────────
   const openAmtTotal  = openAmounts.reduce((s, a) => s + (a.amount||0), 0);
-  const closeAmtTotal = closeAmounts.reduce((s, a) => s + effectiveAmt(a), 0);
+  const closeAmtTotal = closeAmounts.reduce((s, a) => s + ((a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '') ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0)), 0);
   const usedAmt = Math.max(0, openAmtTotal - closeAmtTotal);
 
   document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
@@ -2853,7 +2847,7 @@ function renderInventory() {
       closeHTML += closeAmounts.map(a => `
         <div class="inv-list-item">
           <div><span style="font-weight:700;">${escHtml(a.name)}</span>${a.notes ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(a.notes)}</span>` : ''}</div>
-          <span style="font-weight:800;color:var(--green);">₱${fmt(effectiveAmt(a))}</span>
+          <span style="font-weight:800;color:var(--green);">₱${fmt((a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '') ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0))}</span>
         </div>`).join('');
       closeHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal)}</span></div>`;
     }
@@ -2972,7 +2966,7 @@ function renderInventory() {
         const opA = (s.opening?.amounts||[]).find(a => a.name === name);
         const clA = (s.closing?.amounts||[]).find(a => a.name === name);
         const startAmt = opA ? (opA.amount||0) : 0;
-        const endAmt   = clA ? effectiveAmt(clA) : 0;
+        const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
         const usedAmt2 = Math.max(0, startAmt - endAmt);
         const notes    = clA?.notes || '';
         const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
@@ -2999,7 +2993,7 @@ function renderInventory() {
           const opA = (s.opening?.amounts||[]).find(a => a.name === name);
           const clA = (s.closing?.amounts||[]).find(a => a.name === name);
           const startAmt = opA ? (opA.amount||0) : 0;
-          const endAmt   = clA ? effectiveAmt(clA) : 0;
+          const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
           const usedAmt2 = opA ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
           cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
@@ -3021,23 +3015,7 @@ function renderInventory() {
       shortsEl.style.color = totalShorts === 0 ? 'var(--green)' : 'var(--red)';
     }
 
-    // Balance check — sum across all shifts
-    const totalOpenCash  = dayShifts.reduce((s, sh) => s + (sh.opening?.amounts||[]).reduce((a, x) => a + (x.amount||0), 0), 0);
-    const totalCloseCash = dayShifts.reduce((s, sh) => s + (sh.closing?.amounts||[]).reduce((a, x) => a + effectiveAmt(x), 0), 0);
-    const totalUsedCash  = Math.max(0, totalOpenCash - totalCloseCash);
-    const isBalanced = Math.abs(totalOpenCash - totalCloseCash - totalUsedCash) < 0.01;
-    const balanceEl = document.getElementById('invBalanceCheck');
-    balanceEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div><div style="font-size:1.2rem;font-weight:800;color:var(--red);">-₱${fmt(totalUsedCash)}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">₱${fmt(totalCloseCash)}</div></div>
-      </div>
-      <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
-        ${isBalanced ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>` : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash - totalUsedCash))}</span>`}
-      </div>`;
-    balanceEl.style.background = 'var(--card-bg)';
-    balanceEl.style.borderColor = isBalanced ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+    // Balance check section removed
 
     const oldEl = document.getElementById('invAllShifts');
     if (oldEl) oldEl.remove();
