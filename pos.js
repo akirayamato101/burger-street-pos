@@ -2534,7 +2534,14 @@ function removeAmount(idx) {
 function updateInvTotal() {
   // Total = sum of all amounts (peso values only; qty is just count, no peso value)
   const isClosing = invModalType === 'closing';
-  const total = invAmounts.reduce((s, a) => s + (isClosing ? (a.closingAmount||0) : (a.amount||0)), 0);
+  const total = invAmounts.reduce((s, a) => {
+    if (isClosing) {
+      // If an actual count was entered, use it; otherwise use amount left
+      const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
+      return s + (hasActual ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0));
+    }
+    return s + (a.amount||0);
+  }, 0);
   const el = document.getElementById('invModalTotalLabel');
   if (el) el.textContent = `Cash Total: ₱${fmt(total)}`;
 }
@@ -2731,7 +2738,10 @@ function renderInventory() {
     dayShifts.forEach((s, i) => {
       const sOp = s.opening || {}, sCl = s.closing || {};
       const openAmt = (sOp.amounts || []).reduce((a, x) => a + (x.amount||0), 0);
-      const closeAmt = (sCl.amounts || []).reduce((a, x) => a + (x.closingAmount||0), 0);
+      const closeAmt = (sCl.amounts || []).reduce((a, x) => {
+        const hasActual = x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '';
+        return a + (hasActual ? (parseFloat(x.actualAmount)||0) : (x.closingAmount||0));
+      }, 0);
       const sOpIng = sOp.ingredients || [];
       const sClIng = sCl.ingredients || [];
       const hasCl = (sCl.ingredients && sCl.ingredients.length) || (sCl.amounts && sCl.amounts.length);
@@ -2782,7 +2792,10 @@ function renderInventory() {
 
   // ── Summary cards for the selected shift ────────────────────────────────
   const openAmtTotal  = openAmounts.reduce((s, a) => s + (a.amount||0), 0);
-  const closeAmtTotal = closeAmounts.reduce((s, a) => s + (a.closingAmount||0), 0);
+  const closeAmtTotal = closeAmounts.reduce((s, a) => {
+    const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
+    return s + (hasActual ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0));
+  }, 0);
   const usedAmt = Math.max(0, openAmtTotal - closeAmtTotal);
 
   document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
@@ -2844,11 +2857,15 @@ function renderInventory() {
     }
     if (closeAmounts.length) {
       closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;">💵 Cash Left</div>`;
-      closeHTML += closeAmounts.map(a => `
+      closeHTML += closeAmounts.map(a => {
+        const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
+        const displayAmt = hasActual ? parseFloat(a.actualAmount) : (a.closingAmount||0);
+        return `
         <div class="inv-list-item">
           <div><span style="font-weight:700;">${escHtml(a.name)}</span>${a.notes ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(a.notes)}</span>` : ''}</div>
-          <span style="font-weight:800;color:var(--green);">₱${fmt(a.closingAmount||0)}</span>
-        </div>`).join('');
+          <span style="font-weight:800;color:var(--green);">₱${fmt(displayAmt)}</span>
+        </div>`;
+      }).join('');
       closeHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal)}</span></div>`;
     }
     if (isToday && viewIdx === shiftCount - 1) {
@@ -2966,13 +2983,12 @@ function renderInventory() {
         const opA = (s.opening?.amounts||[]).find(a => a.name === name);
         const clA = (s.closing?.amounts||[]).find(a => a.name === name);
         const startAmt = opA ? (opA.amount||0) : 0;
-        const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
+        const endAmt   = clA ? (clA.actualAmount !== null && clA.actualAmount !== undefined && clA.actualAmount !== '' ? parseFloat(clA.actualAmount) : (clA.closingAmount ?? clA.amount ?? 0)) : 0;
         const usedAmt2 = Math.max(0, startAmt - endAmt);
         const notes    = clA?.notes || '';
         const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
         const actualAmt = hasActualAmt ? parseFloat(clA.actualAmount) : null;
         const amtVariance = hasActualAmt ? (actualAmt - endAmt) : null;
-        const vColor = amtVariance === null ? '' : amtVariance === 0 ? 'var(--green)' : 'var(--red)';
         const vLabel = amtVariance === null ? '—' : amtVariance === 0 ? '✓ Match' : amtVariance < 0 ? '-₱'+fmt(Math.abs(amtVariance))+' short' : '+₱'+fmt(amtVariance)+' over';
         if (hasActualAmt && actualAmt < endAmt) totalShorts++;
         let status = !clA ? '<span class="inv-status-tag inv-tag-na">Not Closed</span>'
@@ -2993,7 +3009,7 @@ function renderInventory() {
           const opA = (s.opening?.amounts||[]).find(a => a.name === name);
           const clA = (s.closing?.amounts||[]).find(a => a.name === name);
           const startAmt = opA ? (opA.amount||0) : 0;
-          const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
+          const endAmt   = clA ? (clA.actualAmount !== null && clA.actualAmount !== undefined && clA.actualAmount !== '' ? parseFloat(clA.actualAmount) : (clA.closingAmount ?? clA.amount ?? 0)) : 0;
           const usedAmt2 = opA ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
           cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
@@ -3015,7 +3031,23 @@ function renderInventory() {
       shortsEl.style.color = totalShorts === 0 ? 'var(--green)' : 'var(--red)';
     }
 
-    // Balance check section removed
+    // Balance check — sum across all shifts
+    const totalOpenCash  = dayShifts.reduce((s, sh) => s + (sh.opening?.amounts||[]).reduce((a, x) => a + (x.amount||0), 0), 0);
+    const totalCloseCash = dayShifts.reduce((s, sh) => s + (sh.closing?.amounts||[]).reduce((a, x) => a + (x.closingAmount||0), 0), 0);
+    const totalUsedCash  = Math.max(0, totalOpenCash - totalCloseCash);
+    const isBalanced = Math.abs(totalOpenCash - totalCloseCash - totalUsedCash) < 0.01;
+    const balanceEl = document.getElementById('invBalanceCheck');
+    balanceEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div><div style="font-size:1.2rem;font-weight:800;color:var(--red);">-₱${fmt(totalUsedCash)}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">₱${fmt(totalCloseCash)}</div></div>
+      </div>
+      <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
+        ${isBalanced ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>` : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash - totalUsedCash))}</span>`}
+      </div>`;
+    balanceEl.style.background = 'var(--card-bg)';
+    balanceEl.style.borderColor = isBalanced ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
 
     const oldEl = document.getElementById('invAllShifts');
     if (oldEl) oldEl.remove();
