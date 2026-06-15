@@ -162,8 +162,6 @@ let cashierLoginBuffer = '';
 let selectedCashierId = null;
 
 function showCashierLogin() {
-  // Clear saved session on logout
-  try { localStorage.removeItem('burgStreet_activeSession'); } catch(e) {}
   document.getElementById('lockScreen').classList.add('hidden');
   document.getElementById('app').classList.add('hidden');
   document.getElementById('cashierLoginScreen').classList.remove('hidden');
@@ -358,6 +356,7 @@ function logOut() {
   document.getElementById('lockScreen').classList.add('hidden');
   document.getElementById('app').classList.add('hidden');
   activeCashier = null;
+  try { localStorage.removeItem('burgStreet_activeSession'); } catch(e) {}
   showCashierLogin();
 }
 
