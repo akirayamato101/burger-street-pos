@@ -2499,7 +2499,7 @@ function renderInvModal() {
           <div>
             <input type="number" class="input-field" id="actualAmtInp_${idx}" value="${hasActualAmt ? amt.actualAmount : ''}" min="0" step="0.01" placeholder="recount"
               style="padding:7px 6px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--orange);border-color:rgba(251,146,60,0.4);width:100%;"
-              oninput="invAmounts[${idx}].actualAmount=this.value===''?null:parseFloat(this.value);updateActualAmtDiff(${idx})" />
+              oninput="invAmounts[${idx}].actualAmount=this.value===''?null:parseFloat(this.value);updateInvTotal();updateActualAmtDiff(${idx})" />
             <div id="actualAmtDiff_${idx}" style="font-size:0.68rem;font-weight:800;text-align:right;min-height:14px;"></div>
           </div>
         </div>
@@ -2536,7 +2536,6 @@ function updateInvTotal() {
   const isClosing = invModalType === 'closing';
   const total = invAmounts.reduce((s, a) => {
     if (isClosing) {
-      // If an actual count was entered, use it; otherwise use amount left
       const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
       return s + (hasActual ? (parseFloat(a.actualAmount)||0) : (a.closingAmount||0));
     }
@@ -2738,10 +2737,7 @@ function renderInventory() {
     dayShifts.forEach((s, i) => {
       const sOp = s.opening || {}, sCl = s.closing || {};
       const openAmt = (sOp.amounts || []).reduce((a, x) => a + (x.amount||0), 0);
-      const closeAmt = (sCl.amounts || []).reduce((a, x) => {
-        const hasActual = x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '';
-        return a + (hasActual ? (parseFloat(x.actualAmount)||0) : (x.closingAmount||0));
-      }, 0);
+      const closeAmt = (sCl.amounts || []).reduce((a, x) => a + (x.closingAmount||0), 0);
       const sOpIng = sOp.ingredients || [];
       const sClIng = sCl.ingredients || [];
       const hasCl = (sCl.ingredients && sCl.ingredients.length) || (sCl.amounts && sCl.amounts.length);
@@ -2983,12 +2979,13 @@ function renderInventory() {
         const opA = (s.opening?.amounts||[]).find(a => a.name === name);
         const clA = (s.closing?.amounts||[]).find(a => a.name === name);
         const startAmt = opA ? (opA.amount||0) : 0;
-        const endAmt   = clA ? (clA.actualAmount !== null && clA.actualAmount !== undefined && clA.actualAmount !== '' ? parseFloat(clA.actualAmount) : (clA.closingAmount ?? clA.amount ?? 0)) : 0;
+        const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
         const usedAmt2 = Math.max(0, startAmt - endAmt);
         const notes    = clA?.notes || '';
         const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
         const actualAmt = hasActualAmt ? parseFloat(clA.actualAmount) : null;
         const amtVariance = hasActualAmt ? (actualAmt - endAmt) : null;
+        const vColor = amtVariance === null ? '' : amtVariance === 0 ? 'var(--green)' : 'var(--red)';
         const vLabel = amtVariance === null ? '—' : amtVariance === 0 ? '✓ Match' : amtVariance < 0 ? '-₱'+fmt(Math.abs(amtVariance))+' short' : '+₱'+fmt(amtVariance)+' over';
         if (hasActualAmt && actualAmt < endAmt) totalShorts++;
         let status = !clA ? '<span class="inv-status-tag inv-tag-na">Not Closed</span>'
@@ -3009,7 +3006,7 @@ function renderInventory() {
           const opA = (s.opening?.amounts||[]).find(a => a.name === name);
           const clA = (s.closing?.amounts||[]).find(a => a.name === name);
           const startAmt = opA ? (opA.amount||0) : 0;
-          const endAmt   = clA ? (clA.actualAmount !== null && clA.actualAmount !== undefined && clA.actualAmount !== '' ? parseFloat(clA.actualAmount) : (clA.closingAmount ?? clA.amount ?? 0)) : 0;
+          const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
           const usedAmt2 = opA ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
           cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
