@@ -2797,11 +2797,11 @@ function renderInventory() {
 
   // ── Summary cards for the selected shift ────────────────────────────────
   const openAmtTotal  = openAmounts.reduce((s, a) => s + (a.amount||0), 0);
-  const closeAmtTotal = closeAmounts.reduce((s, a) => s + (a.closingAmount||0), 0);
-  const usedAmt = Math.max(0, openAmtTotal - closeAmtTotal);
+  const closeAmtTotal = closeAmounts.length ? closeAmounts.reduce((s, a) => s + (a.closingAmount||0), 0) : null;
+  const usedAmt = closeAmtTotal !== null ? Math.max(0, openAmtTotal - closeAmtTotal) : null;
 
   document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
-  document.getElementById('invCloseTotal').textContent = closeAmounts.length ? '₱' + fmt(closeAmtTotal) : '—';
+  document.getElementById('invCloseTotal').textContent = closeAmtTotal !== null ? '₱' + fmt(closeAmtTotal) : '—';
   const ingCountEl = document.getElementById('invIngCount');
   if (ingCountEl) ingCountEl.textContent = openIngredients.length + ' item' + (openIngredients.length !== 1 ? 's' : '');
 
@@ -2864,7 +2864,7 @@ function renderInventory() {
           <div><span style="font-weight:700;">${escHtml(a.name)}</span>${a.notes ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(a.notes)}</span>` : ''}</div>
           <span style="font-weight:800;color:var(--green);">₱${fmt(a.closingAmount||0)}</span>
         </div>`).join('');
-      closeHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal)}</span></div>`;
+      closeHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal||0)}</span></div>`;
     }
     if (isToday && viewIdx === shiftCount - 1) {
       closeHTML += `<div style="margin-top:16px;"><button class="btn btn-primary" style="width:100%;font-size:0.88rem;" onclick="startNewShift()">🔄 Start New Shift (Next Cashier)</button></div>`;
@@ -2926,8 +2926,8 @@ function renderInventory() {
         const opI = (s.opening?.ingredients||[]).find(i => i.name === name);
         const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
         const startQty = opI ? (opI.qty||0) : 0;
-        const endQty   = clI ? (clI.closingQty ?? clI.qty ?? 0) : 0;
-        const usedQty  = Math.max(0, startQty - endQty);
+        const endQty   = clI ? (clI.closingQty ?? clI.qty ?? 0) : null;
+        const usedQty  = endQty !== null ? Math.max(0, startQty - endQty) : null;
         unit = opI?.unit || clI?.unit || 'pcs';
         const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
         const actualQty = hasActual ? clI.actualQty : null;
@@ -2943,8 +2943,8 @@ function renderInventory() {
         rows += `<tr>
           <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
           <td style="color:var(--orange);">${startQty} ${escHtml(unit)}</td>
-          <td style="color:var(--green);">${endQty} ${escHtml(unit)}</td>
-          <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>
+          <td style="color:var(--green);">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
+          <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty !== null ? (usedQty > 0 ? '-'+usedQty : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:var(--orange);font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${vColor};font-weight:800;">${vLabel}</td>
           <td>${status}</td></tr>`;
@@ -2981,8 +2981,8 @@ function renderInventory() {
         const opA = (s.opening?.amounts||[]).find(a => a.name === name);
         const clA = (s.closing?.amounts||[]).find(a => a.name === name);
         const startAmt = opA ? (opA.amount||0) : 0;
-        const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
-        const usedAmt2 = Math.max(0, startAmt - endAmt);
+        const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : null;
+        const usedAmt2 = endAmt !== null ? Math.max(0, startAmt - endAmt) : null;
         const notes    = clA?.notes || '';
         const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
         const actualAmt = hasActualAmt ? parseFloat(clA.actualAmount) : null;
@@ -2997,8 +2997,8 @@ function renderInventory() {
         rows += '<tr>'
           + '<td><strong>'+escHtml(name)+'</strong> <span style="font-size:0.72rem;color:var(--blue);">(₱)</span></td>'
           + '<td style="color:var(--blue);">₱'+fmt(startAmt)+'</td>'
-          + '<td style="color:var(--green);">₱'+fmt(endAmt)+'</td>'
-          + '<td style="color:'+(usedAmt2>0?'var(--red)':'var(--text3)')+';">'+(usedAmt2>0?'-₱'+fmt(usedAmt2):'₱0.00')+'</td>'
+          + '<td style="color:var(--green);">'+(endAmt !== null ? '₱'+fmt(endAmt) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>')+'</td>'
+          + '<td style="color:'+(usedAmt2>0?'var(--red)':'var(--text3)')+';">'+(usedAmt2 !== null ? (usedAmt2>0?'-₱'+fmt(usedAmt2):'₱0.00') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>')+'</td>'
           + '<td style="color:var(--orange);font-weight:800;">'+actualCell+'</td>'
           + '<td style="color:'+vColor+';font-weight:800;">'+vLabel+'</td>'
           + '<td>'+status+'</td></tr>';
