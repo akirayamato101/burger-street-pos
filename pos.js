@@ -3015,31 +3015,7 @@ function renderInventory() {
       shortsEl.style.color = totalShorts === 0 ? 'var(--green)' : 'var(--red)';
     }
 
-    // Balance check — sum across all shifts
-    const totalOpenCash  = dayShifts.reduce((s, sh) => s + (sh.opening?.amounts||[]).reduce((a, x) => a + (x.amount||0), 0), 0);
-    const totalCloseCash = dayShifts.reduce((s, sh) => s + (sh.closing?.amounts||[]).reduce((a, x) => a + (x.closingAmount||0), 0), 0);
-    // Cash Used = cash advances deducted today (real deductions, not derived from opening-closing)
-    const totalUsedCash  = (posState.cashAdvances || [])
-      .filter(a => a.datetime && a.datetime.startsWith(dateKey))
-      .reduce((s, a) => s + (a.amount || 0), 0);
-    // Expected closing = opening - cash advances used; discrepancy = expected - actual closing
-    const expectedClosing = totalOpenCash - totalUsedCash;
-    const discrepancy = expectedClosing - totalCloseCash;
-    const isBalanced = Math.abs(discrepancy) < 0.01;
-    const balanceEl = document.getElementById('invBalanceCheck');
-    balanceEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div><div style="font-size:1.2rem;font-weight:800;color:var(--red);">-₱${fmt(totalUsedCash)}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">₱${fmt(totalCloseCash)}</div></div>
-      </div>
-      <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
-        ${isBalanced
-          ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>`
-          : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">${discrepancy > 0 ? 'Cash Short' : 'Cash Over'}: ₱${fmt(Math.abs(discrepancy))}</span>`}
-      </div>`;
-    balanceEl.style.background = 'var(--card-bg)';
-    balanceEl.style.borderColor = isBalanced ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+    // Balance check section removed
 
     const oldEl = document.getElementById('invAllShifts');
     if (oldEl) oldEl.remove();
