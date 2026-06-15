@@ -374,7 +374,7 @@ function showPage(page) {
   if (page === 'summary') renderSummary();
   if (page === 'products') refreshProductList();
   if (page === 'settings') refreshSettingsPage();
-  if (page === 'inventory') { renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); }
+  if (page === 'inventory') { currentShiftIndex = -1; renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); }
   if (page === 'reports') { renderReports(); }
 }
 
@@ -1131,6 +1131,49 @@ function deleteProduct(id) {
 
 
 // =================== SALES REPORTS ===================
+// Navigate the Inventory Totals report to the previous/next date that has
+// opening or closing inventory recorded. Switches the period to "Custom Range"
+// pinned to that single day, so Prev/Next step through actual inventory
+// records rather than arbitrary calendar days.
+function shiftReportDate(delta) {
+  const periodEl = document.getElementById('reportPeriod');
+  const fromEl = document.getElementById('reportFrom');
+  const toEl = document.getElementById('reportTo');
+  if (!periodEl || !fromEl || !toEl) return;
+
+  const todayKey = getLocalDateKey();
+  let current;
+  if (periodEl.value === 'custom' && (fromEl.value || toEl.value)) {
+    current = toEl.value || fromEl.value;
+  } else {
+    current = todayKey;
+  }
+
+  const dates = getInventoryDatesWithRecords();
+  const candidates = [...new Set([...dates, todayKey])].sort();
+
+  let target = null;
+  if (delta < 0) {
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      if (candidates[i] < current) { target = candidates[i]; break; }
+    }
+  } else {
+    for (let i = 0; i < candidates.length; i++) {
+      if (candidates[i] > current) { target = candidates[i]; break; }
+    }
+  }
+
+  if (!target) {
+    showToast(delta < 0 ? 'No earlier inventory records found.' : 'No later inventory records found.', '');
+    return;
+  }
+
+  periodEl.value = 'custom';
+  fromEl.value = target;
+  toEl.value = target;
+  renderReports();
+}
+
 function renderReports() {
   const period = document.getElementById('reportPeriod')?.value || 'daily';
   const fromEl  = document.getElementById('reportFrom');
@@ -1176,49 +1219,79 @@ function renderReports() {
   const allInvRecords = [];
   try {
     const sharedInv = loadInventoryData();
-    for (const [date, dayData] of Object.entries(sharedInv)) {
-      if (date < startDate || date > endDate) continue;
+    const dates = Object.keys(sharedInv).filter(d => d >= startDate && d <= endDate).sort();
+    for (const date of dates) {
+      const dayData = sharedInv[date];
       if (dayData.shifts && dayData.shifts.length) {
-        // Multi-shift format: aggregate all shifts for this day
+        // Multi-shift format: aggregate all shifts for this day, in order
         dayData.shifts.forEach((shift, si) => {
-          if (shift.opening) allInvRecords.push({ date, cashierName: shift.opening.cashier || BIZ_NAME, type: 'opening', items: shift.opening.ingredients || [], amounts: shift.opening.amounts || [], shiftIdx: si });
+          if (shift.opening) allInvRecords.push({ date, cashierName: shift.opening.cashier || BIZ_NAME, type: 'opening', items: shift.opening.ingredients || [], amounts: shift.opening.amounts || [], shiftIdx: si, seeded: !!shift.opening.seededFrom });
           if (shift.closing) allInvRecords.push({ date, cashierName: shift.closing.cashier || BIZ_NAME, type: 'closing', items: shift.closing.ingredients || [], amounts: shift.closing.amounts || [], shiftIdx: si });
         });
       } else {
         // Legacy single opening/closing
-        if (dayData.opening) allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [] });
-        if (dayData.closing) allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [] });
+        if (dayData.opening) allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'opening', items: dayData.opening.ingredients || [], amounts: dayData.opening.amounts || [], shiftIdx: 0, seeded: !!dayData.opening.seededFrom });
+        if (dayData.closing) allInvRecords.push({ date, cashierName: BIZ_NAME, type: 'closing', items: dayData.closing.ingredients || [], amounts: dayData.closing.amounts || [], shiftIdx: 0 });
       }
     }
   } catch(e) {}
 
   // ── Aggregate per item name across all cashiers ──
-  // itemMap[name] = { totalOpening: qty, totalClosing: qty, cashiersSet: Set }
+  // totalOpening: sum of genuinely NEW stock entered during the period (excludes
+  //   seeded/continuation openings, since that stock was already counted as the
+  //   previous shift's closing — counting it again would double the totals).
+  // totalClosing / totalActual: taken ONLY from the LAST closing record in the
+  //   period for each item (the final ending stock), not summed across every
+  //   shift's closing — otherwise the same physical stock gets summed multiple
+  //   times as it carries over from shift to shift.
   const itemMap = {};
   for (const rec of allInvRecords) {
     for (const it of rec.items) {
       const nm = (it.name || '').trim();
       if (!nm) continue;
-      if (!itemMap[nm]) itemMap[nm] = { totalOpening: 0, totalClosing: 0, cashiers: new Set() };
+      if (!itemMap[nm]) itemMap[nm] = { totalOpening: 0, totalClosing: 0, totalActual: null, hasActual: false, isCash: false, cashiers: new Set() };
       if (rec.type === 'opening') {
-        itemMap[nm].totalOpening += (parseFloat(it.qty) || 0);
+        // Skip seeded (continuation) openings — this stock was already counted
+        // as the previous shift/day's closing, so adding it again would double-count.
+        if (!rec.seeded) itemMap[nm].totalOpening += (parseFloat(it.qty) || 0);
+        itemMap[nm].totalSoldBySystem = (itemMap[nm].totalSoldBySystem || 0) + (parseFloat(it.usedQty) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
       } else {
-        itemMap[nm].totalClosing += (parseFloat(it.closingQty ?? it.qty) || 0);
+        // Overwrite (don't accumulate) so only the LAST closing in chronological
+        // order ends up as the final totals — earlier closings already became
+        // the next shift's opening and would otherwise be double-counted.
+        itemMap[nm].totalClosing = (parseFloat(it.closingQty ?? it.qty) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
+        if (it.actualQty !== undefined && it.actualQty !== null && it.actualQty !== '') {
+          itemMap[nm].totalActual = (parseFloat(it.actualQty) || 0);
+          itemMap[nm].hasActual = true;
+        } else {
+          itemMap[nm].hasActual = false;
+          itemMap[nm].totalActual = null;
+        }
       }
     }
     // amounts (money-based) — treat label as item name
     for (const am of rec.amounts) {
       const nm = (am.label || am.name || '').trim();
       if (!nm) continue;
-      if (!itemMap[nm]) itemMap[nm] = { totalOpening: 0, totalClosing: 0, cashiers: new Set() };
+      if (!itemMap[nm]) itemMap[nm] = { totalOpening: 0, totalClosing: 0, totalActual: null, hasActual: false, isCash: true, cashiers: new Set() };
+      itemMap[nm].isCash = true;
       if (rec.type === 'opening') {
-        itemMap[nm].totalOpening += (parseFloat(am.amount) || 0);
+        // Skip seeded (continuation) openings — already counted as previous closing.
+        if (!rec.seeded) itemMap[nm].totalOpening += (parseFloat(am.amount) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
       } else {
-        itemMap[nm].totalClosing += (parseFloat(am.closingAmount ?? am.amount) || 0);
+        // Overwrite with the LAST closing record for the same reason as above.
+        itemMap[nm].totalClosing = (parseFloat(am.closingAmount ?? am.amount) || 0);
         itemMap[nm].cashiers.add(rec.cashierName);
+        if (am.actualAmount !== undefined && am.actualAmount !== null && am.actualAmount !== '') {
+          itemMap[nm].totalActual = (parseFloat(am.actualAmount) || 0);
+          itemMap[nm].hasActual = true;
+        } else {
+          itemMap[nm].hasActual = false;
+          itemMap[nm].totalActual = null;
+        }
       }
     }
   }
@@ -1229,15 +1302,40 @@ function renderReports() {
   const itemRows = Object.entries(itemMap).sort((a, b) => a[0].localeCompare(b[0])).map(([name, d]) => {
     const used = Math.max(0, d.totalOpening - d.totalClosing);
     const usedColor = used > 0 ? 'color:var(--red);' : 'color:var(--text3);';
-    return `<tr>
-      <td style="font-weight:700;">${escHtml(name)}</td>
-      <td style="color:var(--blue);font-weight:700;">${d.totalOpening % 1 === 0 ? d.totalOpening : d.totalOpening.toFixed(2)}</td>
-      <td style="color:var(--green);font-weight:700;">${d.totalClosing % 1 === 0 ? d.totalClosing : d.totalClosing.toFixed(2)}</td>
-      <td style="${usedColor}font-weight:700;">${used % 1 === 0 ? used : used.toFixed(2)}</td>
-      <td><span class="badge badge-blue">${d.cashiers.size} cashier${d.cashiers.size !== 1 ? 's' : ''}</span></td>
-    </tr>`;
+    const isCash = d.isCash;
+    const fmtVal = v => isCash ? '₱' + fmt(v) : (v % 1 === 0 ? v : v.toFixed(2));
+    const actualStr = d.hasActual ? fmtVal(d.totalActual) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>';
+    let shortStr = '<span style="color:var(--text3);font-size:0.78rem;">—</span>';
+    let shortStyle = 'color:var(--text3);';
+    if (d.hasActual) {
+      // Short based on actual physical recount vs recorded closing
+      const short = d.totalClosing - d.totalActual;
+      if (short === 0) { shortStr = '<span style="color:var(--green);font-weight:800;">✓ Match</span>'; shortStyle = ''; }
+      else if (short > 0) { shortStr = (isCash ? '-₱'+fmt(short) : '-'+(short%1===0?short:short.toFixed(2))) + ' <span style="font-size:0.68rem;color:var(--text3);">short</span>'; shortStyle = 'color:var(--red);font-weight:800;'; }
+      else { shortStr = (isCash ? '+₱'+fmt(Math.abs(short)) : '+'+(Math.abs(short)%1===0?Math.abs(short):Math.abs(short).toFixed(2))) + ' <span style="font-size:0.68rem;color:var(--text3);">over</span>'; shortStyle = 'color:var(--orange);font-weight:800;'; }
+    } else if (!isCash && d.totalClosing > 0 && (d.totalSoldBySystem || 0) > 0) {
+      // Fallback: show computed short = Opening − (SoldBySystem + Closing) when no actual count entered
+      const expectedRemaining = d.totalOpening - (d.totalSoldBySystem || 0);
+      const computedShort = expectedRemaining - d.totalClosing;
+      if (computedShort > 0) {
+        shortStr = '-'+(computedShort%1===0?computedShort:computedShort.toFixed(2)) + ' <span style="font-size:0.65rem;color:var(--text3);">(est.)</span>';
+        shortStyle = 'color:var(--red);font-weight:700;';
+      } else if (computedShort === 0) {
+        shortStr = '<span style="color:var(--text3);font-size:0.78rem;">✓</span>';
+      }
+    }
+    const typeTag = isCash ? '<span style="font-size:0.7rem;color:var(--blue);">(₱)</span>' : '<span style="font-size:0.7rem;color:var(--text3);">(qty)</span>';
+    return '<tr>'
+      + '<td style="font-weight:700;">' + escHtml(name) + ' ' + typeTag + '</td>'
+      + '<td style="color:var(--blue);font-weight:700;">' + fmtVal(d.totalOpening) + '</td>'
+      + '<td style="color:var(--green);font-weight:700;">' + fmtVal(d.totalClosing) + '</td>'
+      + '<td style="' + usedColor + 'font-weight:700;">' + (used > 0 ? (isCash ? '-₱'+fmt(used) : '-'+(used%1===0?used:used.toFixed(2))) : (isCash ? '₱0.00' : '—')) + '</td>'
+      + '<td style="color:var(--orange);font-weight:700;">' + actualStr + '</td>'
+      + '<td style="' + shortStyle + '">' + shortStr + '</td>'
+      + '<td><span class="badge badge-blue">' + d.cashiers.size + ' cashier' + (d.cashiers.size !== 1 ? 's' : '') + '</span></td>'
+      + '</tr>';
   }).join('');
-  document.getElementById('rptInventoryBody').innerHTML = itemRows || '<tr><td colspan="5" class="empty-row">No inventory data for selected period.</td></tr>';
+  document.getElementById('rptInventoryBody').innerHTML = itemRows || '<tr><td colspan="7" class="empty-row">No inventory data for selected period.</td></tr>';
 
   // ── Collect all cash advances across all cashiers ──
   let allAdvances = [];
@@ -1299,38 +1397,47 @@ function renderReports() {
       let itemRowsHtml = itemNames.map(nm => {
         const oIt = openItems.find(i => (i.name || i.label || '') === nm);
         const cIt = closeItems.find(i => (i.name || i.label || '') === nm);
+        const isCash = (oIt && oIt.amount !== undefined && oIt.qty === undefined) || (cIt && cIt.closingAmount !== undefined);
         const oQty = oIt ? (parseFloat(oIt.qty ?? oIt.amount) || 0) : '—';
         const cQty = cIt ? (parseFloat(cIt.closingQty ?? cIt.closingAmount ?? cIt.qty ?? cIt.amount) || 0) : '—';
         const used = (typeof oQty === 'number' && typeof cQty === 'number') ? Math.max(0, oQty - cQty) : '—';
-        return `<tr style="font-size:0.82rem;">
-          <td style="padding-left:20px;color:var(--text2);">${escHtml(nm)}</td>
-          <td style="color:var(--blue);">${typeof oQty === 'number' ? (oQty % 1 === 0 ? oQty : oQty.toFixed(2)) : oQty}</td>
-          <td style="color:var(--green);">${typeof cQty === 'number' ? (cQty % 1 === 0 ? cQty : cQty.toFixed(2)) : cQty}</td>
-          <td style="color:${typeof used === 'number' && used > 0 ? 'var(--red)' : 'var(--text3)'};">${typeof used === 'number' ? (used % 1 === 0 ? used : used.toFixed(2)) : used}</td>
-        </tr>`;
+        const rawActual = cIt ? (cIt.actualQty !== undefined ? cIt.actualQty : (cIt.actualAmount !== undefined ? cIt.actualAmount : null)) : null;
+        const hasActual = rawActual !== null && rawActual !== '' && rawActual !== undefined;
+        const actualVal = hasActual ? parseFloat(rawActual) : null;
+        let shortStr = '—'; let shortStyle = 'color:var(--text3);';
+        if (hasActual && typeof cQty === 'number') {
+          const short = cQty - actualVal;
+          if (short === 0) { shortStr = '✓'; shortStyle = 'color:var(--green);font-weight:800;'; }
+          else if (short > 0) { shortStr = isCash ? '-₱'+fmt(short) : '-'+(short%1===0?short:short.toFixed(2)); shortStyle = 'color:var(--red);font-weight:800;'; }
+          else { shortStr = isCash ? '+₱'+fmt(Math.abs(short)) : '+'+(Math.abs(short)%1===0?Math.abs(short):Math.abs(short).toFixed(2)); shortStyle = 'color:var(--orange);font-weight:800;'; }
+        }
+        const fmtNum = v => typeof v === 'number' ? (isCash ? '₱'+fmt(v) : (v%1===0?v:v.toFixed(2))) : v;
+        return '<tr style="font-size:0.82rem;">'
+          + '<td style="padding-left:20px;color:var(--text2);">' + escHtml(nm) + '</td>'
+          + '<td style="color:var(--blue);">' + fmtNum(oQty) + '</td>'
+          + '<td style="color:var(--green);">' + fmtNum(cQty) + '</td>'
+          + '<td style="color:' + (typeof used === 'number' && used > 0 ? 'var(--red)' : 'var(--text3)') + ';">' + (typeof used === 'number' ? (isCash ? '-₱'+fmt(used) : (used%1===0?used:used.toFixed(2))) : used) + '</td>'
+          + '<td style="color:var(--orange);">' + (hasActual ? fmtNum(actualVal) : '<span style="color:var(--text3);">—</span>') + '</td>'
+          + '<td style="' + shortStyle + '">' + shortStr + '</td>'
+          + '</tr>';
       }).join('');
-      cashierRows += `
-        <tr style="background:var(--bg3);">
-          <td colspan="4" style="font-weight:800;padding:10px 14px;">
-            👤 ${escHtml(cname)}
-            ${hasOpen ? '<span class="badge badge-blue" style="margin-left:8px;">Opening ✓</span>' : '<span class="badge" style="margin-left:8px;background:var(--bg3);color:var(--text3);">No Opening</span>'}
-            ${hasClose ? '<span class="badge badge-green" style="margin-left:4px;">Closing ✓</span>' : '<span class="badge" style="margin-left:4px;background:var(--bg3);color:var(--text3);">No Closing</span>'}
-          </td>
-        </tr>
-        ${itemRowsHtml || `<tr><td colspan="4" style="padding-left:20px;color:var(--text3);font-size:0.82rem;padding-top:8px;padding-bottom:8px;">No items recorded.</td></tr>`}`;
+      cashierRows += '<tr style="background:var(--bg3);">'
+        + '<td colspan="6" style="font-weight:800;padding:10px 14px;">'
+        + '👤 ' + escHtml(cname)
+        + (hasOpen ? '<span class="badge badge-blue" style="margin-left:8px;">Opening ✓</span>' : '<span class="badge" style="margin-left:8px;background:var(--bg3);color:var(--text3);">No Opening</span>')
+        + (hasClose ? '<span class="badge badge-green" style="margin-left:4px;">Closing ✓</span>' : '<span class="badge" style="margin-left:4px;background:var(--bg3);color:var(--text3);">No Closing</span>')
+        + '</td></tr>'
+        + (itemRowsHtml || '<tr><td colspan="6" style="padding-left:20px;color:var(--text3);font-size:0.82rem;padding-top:8px;padding-bottom:8px;">No items recorded.</td></tr>');
     }
-    dailyHtml += `
-      <div style="margin-bottom:20px;">
-        <div style="font-weight:800;font-size:0.95rem;color:var(--orange);margin-bottom:8px;padding:8px 12px;background:rgba(232,124,30,0.08);border-radius:8px;border-left:3px solid var(--orange);">📅 ${dateLabel}</div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Item / Supply</th><th>Opening</th><th>Closing</th><th>Used</th></tr></thead>
-            <tbody>${cashierRows}</tbody>
-          </table>
-        </div>
-      </div>`;
+    dailyHtml += '<div style="margin-bottom:20px;">'
+      + '<div style="font-weight:800;font-size:0.95rem;color:var(--orange);margin-bottom:8px;padding:8px 12px;background:rgba(232,124,30,0.08);border-radius:8px;border-left:3px solid var(--orange);">📅 ' + dateLabel + '</div>'
+      + '<div class="table-wrap">'
+      + '<table class="data-table">'
+      + '<thead><tr><th>Item / Supply</th><th>Opening</th><th>Closing</th><th>Used</th><th style="color:var(--orange);">Actual Count</th><th style="color:var(--red);">Short / Over</th></tr></thead>'
+      + '<tbody>' + cashierRows + '</tbody>'
+      + '</table></div></div>';
   }
-  document.getElementById('rptDailyCashierInv').innerHTML = dailyHtml || '<p style="color:var(--text3);font-size:0.88rem;text-align:center;padding:24px 0;">No inventory data for selected period.</p>';
+    document.getElementById('rptDailyCashierInv').innerHTML = dailyHtml || '<p style="color:var(--text3);font-size:0.88rem;text-align:center;padding:24px 0;">No inventory data for selected period.</p>';
 }
 
 // =================== SECRET OWNER TAP ===================
@@ -2114,6 +2221,87 @@ function getTodayInvKey() {
   const d = document.getElementById('inventoryDate')?.value || getLocalDateKey();
   return d;
 }
+
+// Returns a sorted list of date keys that have at least one opening or
+// closing inventory record (in any shift, current or legacy format).
+function getInventoryDatesWithRecords() {
+  const data = loadInventoryData();
+  const dates = [];
+  for (const date of Object.keys(data)) {
+    const shifts = getDayShifts(date, data);
+    const hasRecord = shifts.some(s => (s.opening && ((s.opening.ingredients && s.opening.ingredients.length) || (s.opening.amounts && s.opening.amounts.length)))
+      || (s.closing && ((s.closing.ingredients && s.closing.ingredients.length) || (s.closing.amounts && s.closing.amounts.length))));
+    if (hasRecord) dates.push(date);
+  }
+  return dates.sort();
+}
+
+// Navigate the Daily Inventory page to the previous/next cashier shift record.
+// Within a single day, this steps through each cashier's opening/closing
+// inventory (shift) one at a time. When the first/last shift of the day is
+// reached, Prev/Next moves on to the previous/next date that has records,
+// landing on the last/first shift of that day respectively.
+function shiftInventoryDate(delta) {
+  const el = document.getElementById('inventoryDate');
+  if (!el) return;
+  const current = el.value || getLocalDateKey();
+  const data = loadInventoryData();
+  const dayShifts = getDayShifts(current, data);
+  const shiftCount = dayShifts.length;
+
+  // Resolve the index currently being viewed for this day
+  const viewIdx = (currentShiftIndex < 0 || currentShiftIndex >= shiftCount)
+    ? shiftCount - 1
+    : currentShiftIndex;
+
+  if (delta < 0) {
+    // Step back to the previous shift within the same day, if any
+    if (shiftCount > 0 && viewIdx > 0) {
+      currentShiftIndex = viewIdx - 1;
+      renderInventory();
+      return;
+    }
+    // Otherwise jump to the previous date with records, landing on its last shift
+    const todayKey = getLocalDateKey();
+    const dates = getInventoryDatesWithRecords();
+    const candidates = [...new Set([...dates, todayKey])].sort();
+    let target = null;
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      if (candidates[i] < current) { target = candidates[i]; break; }
+    }
+    if (!target) {
+      showToast('No earlier inventory records found.', '');
+      return;
+    }
+    el.value = target;
+    const targetShifts = getDayShifts(target, data);
+    currentShiftIndex = targetShifts.length ? targetShifts.length - 1 : -1;
+    renderInventory();
+  } else {
+    // Step forward to the next shift within the same day, if any
+    if (shiftCount > 0 && viewIdx < shiftCount - 1) {
+      currentShiftIndex = viewIdx + 1;
+      renderInventory();
+      return;
+    }
+    // Otherwise jump to the next date with records, landing on its first shift
+    const todayKey = getLocalDateKey();
+    const dates = getInventoryDatesWithRecords();
+    const candidates = [...new Set([...dates, todayKey])].sort();
+    let target = null;
+    for (let i = 0; i < candidates.length; i++) {
+      if (candidates[i] > current) { target = candidates[i]; break; }
+    }
+    if (!target) {
+      showToast('No later inventory records found.', '');
+      return;
+    }
+    el.value = target;
+    currentShiftIndex = 0;
+    renderInventory();
+  }
+}
+
 // Alias used by recipe row renderer
 function getInvData() { return loadInventoryData(); }
 function getTodayKey() { return getLocalDateKey(); }
@@ -2366,6 +2554,22 @@ function saveInvModal() {
     if (!ings.length && !amts.length) { showToast('Please add at least one item.', 'error'); return; }
     shift.opening = { ingredients: ings, amounts: amts, cashier: cashierName, savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'}) };
   } else {
+    // Read actualQty and actualAmount directly from DOM inputs to ensure
+    // values are captured even if oninput didn't fire on the last edit (e.g. mobile).
+    invIngredients.forEach((ing, idx) => {
+      const el = document.getElementById('actualInp_' + idx);
+      if (el) {
+        const raw = el.value.trim();
+        ing.actualQty = raw === '' ? null : (parseInt(raw, 10) || 0);
+      }
+    });
+    invAmounts.forEach((amt, idx) => {
+      const el = document.getElementById('actualAmtInp_' + idx);
+      if (el) {
+        const raw = el.value.trim();
+        amt.actualAmount = raw === '' ? null : (parseFloat(raw) || 0);
+      }
+    });
     shift.closing = {
       ingredients: invIngredients.map(i => ({...i})),
       amounts: invAmounts.map(a => ({...a})),
@@ -2423,10 +2627,19 @@ function startNewShift() {
   showToast(`✅ New shift started! Opening seeded from previous shift's closing.`, 'success');
 }
 
+// Which shift index is selected on the inventory page (-1 = last/active)
+let currentShiftIndex = -1;
+
+function selectShift(idx) {
+  currentShiftIndex = idx;
+  renderInventory();
+}
+
 function renderInventory() {
   const dateKey = getTodayInvKey();
   let data = loadInventoryData();
-  // Auto-seed opening from last shift closing if not yet set
+
+  // Auto-seed opening from last closing if needed
   const existingShifts = getDayShifts(dateKey, data);
   if (!existingShifts.length || !existingShifts[existingShifts.length - 1].opening) {
     seedOpeningFromLastClosing(dateKey, data);
@@ -2435,12 +2648,31 @@ function renderInventory() {
 
   const dayShifts = getDayShifts(dateKey, data);
   const shiftCount = dayShifts.length;
-  const activeShift = dayShifts[shiftCount - 1] || {};
+  const todayKey = getLocalDateKey();
+  const isToday = dateKey === todayKey;
+
+  // Resolve which shift to display
+  const viewIdx = (currentShiftIndex < 0 || currentShiftIndex >= shiftCount)
+    ? shiftCount - 1
+    : currentShiftIndex;
+
+  // ── Shift indicator (between Prev/Next buttons) ─────────────────────────
+  const shiftIndicator = document.getElementById('invShiftIndicator');
+  if (shiftIndicator) {
+    if (shiftCount > 0) {
+      const dateLabel = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+      shiftIndicator.textContent = `Shift ${viewIdx + 1} of ${shiftCount} · ${dateLabel}`;
+    } else {
+      shiftIndicator.textContent = '';
+    }
+  }
+
+  const activeShift = dayShifts[viewIdx] || {};
   const op = activeShift.opening || {};
   const cl = activeShift.closing || {};
 
-  const openIngredients = op.ingredients || [];
-  const openAmounts     = op.amounts     || [];
+  const openIngredients  = op.ingredients || [];
+  const openAmounts      = op.amounts     || [];
   const closeIngredients = cl.ingredients || [];
   const closeAmounts     = cl.amounts     || [];
 
@@ -2448,13 +2680,23 @@ function renderInventory() {
   const summaryCards  = document.getElementById('invSummaryCards');
   const compareGrid   = document.getElementById('invCompareGrid');
   const reportSection = document.getElementById('invReportSection');
+  const shiftSelector = document.getElementById('invShiftSelector');
 
   const hasOpening = openIngredients.length > 0 || openAmounts.length > 0;
+
+  // Show/hide Set Opening button (today only)
+  const btnOpen = document.getElementById('btnSetOpening');
+  if (btnOpen) btnOpen.style.display = isToday ? '' : 'none';
+
   if (!hasOpening) {
     emptyEl.style.display = 'block';
+    emptyEl.innerHTML = isToday
+      ? '<div style="font-size:3rem;margin-bottom:12px;">📦</div><div style="font-weight:700;font-size:1rem;margin-bottom:6px;">No Inventory Set for Today</div><div style="font-size:0.88rem;margin-bottom:20px;">Start by setting your Opening Inventory for today.</div><button class="btn btn-primary" onclick="openInvModal(\'opening\')">+ Set Opening Inventory</button>'
+      : '<div style="font-size:3rem;margin-bottom:12px;">📅</div><div style="font-weight:700;font-size:1rem;margin-bottom:6px;">No Inventory Recorded</div><div style="font-size:0.88rem;color:var(--text3);">No opening inventory was saved for <strong>' + dateKey + '</strong>.<br>Use ◀ Prev / Next ▶ to find a date with records.</div>';
     summaryCards.style.display = 'none';
     compareGrid.style.display = 'none';
     reportSection.style.display = 'none';
+    if (shiftSelector) shiftSelector.style.display = 'none';
     return;
   }
 
@@ -2462,45 +2704,92 @@ function renderInventory() {
   summaryCards.style.display = 'grid';
   compareGrid.style.display = 'grid';
 
-  // Summary numbers (only amounts have ₱ value)
+  // ── Ingredient/shift list (always shown; selectable when 2+ shifts) ─────
+  if (shiftSelector) {
+    shiftSelector.style.display = 'block';
+    const headerLabel = shiftCount > 1
+      ? '🔄 SHIFTS THIS DAY — tap to view'
+      : '🥩 INGREDIENT INVENTORY — Opening → Closing';
+    let shtml = `<div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">${headerLabel}</div>`;
+    shtml += '<div style="display:flex;flex-direction:column;gap:6px;">';
+    dayShifts.forEach((s, i) => {
+      const sOp = s.opening || {}, sCl = s.closing || {};
+      const openAmt = (sOp.amounts || []).reduce((a, x) => a + (x.amount||0), 0);
+      const closeAmt = (sCl.amounts || []).reduce((a, x) => a + (x.closingAmount||0), 0);
+      const sOpIng = sOp.ingredients || [];
+      const sClIng = sCl.ingredients || [];
+      const hasCl = (sCl.ingredients && sCl.ingredients.length) || (sCl.amounts && sCl.amounts.length);
+      const isSelected = i === viewIdx;
+      const isLast = isToday && i === shiftCount - 1;
+      const cashier = sOp.cashier || sCl.cashier || '';
+      const time = sOp.savedAt || '';
+      const clickable = shiftCount > 1;
+
+      // Build a short preview of ingredients: name, opening qty → closing qty (if set)
+      const ingPreviewLimit = 4;
+      const ingPreview = sOpIng.slice(0, ingPreviewLimit).map(oi => {
+        const ci = sClIng.find(c => c.name === oi.name);
+        const unit = oi.unit || ci?.unit || 'pcs';
+        const openQty = oi.qty || 0;
+        const closeQty = ci ? (ci.closingQty ?? ci.qty ?? 0) : null;
+        return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3);border-radius:6px;padding:2px 8px;font-size:0.74rem;white-space:nowrap;">
+          <span style="font-weight:700;">${escHtml(oi.name)}</span>
+          <span style="color:var(--text3);">${openQty}${closeQty !== null ? ` → ${closeQty}` : ''} ${escHtml(unit)}</span>
+        </span>`;
+      }).join('');
+      const moreCount = Math.max(0, sOpIng.length - ingPreviewLimit);
+      const moreBadge = moreCount > 0
+        ? `<span style="font-size:0.72rem;color:var(--text3);font-weight:700;">+${moreCount} more</span>` : '';
+
+      shtml += `<div ${clickable ? `onclick="selectShift(${i})" style="cursor:pointer;` : 'style="'}padding:10px 14px;border-radius:10px;border:2px solid ${isSelected && clickable ? 'var(--orange)' : 'var(--border)'};background:${isSelected && clickable ? 'rgba(251,146,60,0.1)' : 'var(--card-bg)'};display:flex;flex-direction:column;gap:8px;">
+        ${shiftCount > 1 ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div>
+            <span style="font-weight:800;font-size:0.88rem;color:${isSelected ? 'var(--orange)' : 'var(--text1)'};">Shift ${i+1}</span>
+            ${cashier ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:8px;">👤 ${escHtml(cashier)}${time ? ' · '+time : ''}</span>` : ''}
+            ${isLast ? '<span style="font-size:0.68rem;background:rgba(251,146,60,0.15);color:var(--orange);border-radius:6px;padding:1px 6px;margin-left:6px;font-weight:700;">ACTIVE</span>' : ''}
+          </div>
+          <div style="text-align:right;font-size:0.82rem;">
+            <span style="color:var(--blue);">Open ₱${fmt(openAmt)}</span>
+            <span style="color:var(--text3);margin:0 4px;">→</span>
+            <span style="color:${hasCl ? 'var(--green)' : 'var(--text3)'};">${hasCl ? 'Close ₱'+fmt(closeAmt) : 'No closing'}</span>
+          </div>
+        </div>` : ''}
+        ${sOpIng.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:0.72rem;color:var(--orange);font-weight:800;">🥩 ${sOpIng.length} ingredient${sOpIng.length !== 1 ? 's' : ''}:</span>
+          ${ingPreview}${moreBadge}
+        </div>` : `<div style="font-size:0.84rem;color:var(--text3);text-align:center;padding:${shiftCount > 1 ? '0' : '12px 0'};">No ingredients recorded yet. ${isLast ? `<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openInvModal('opening')" style="margin-left:8px;">+ Add Ingredients</button>` : ''}</div>`}
+      </div>`;
+    });
+    shtml += '</div>';
+    shiftSelector.innerHTML = shtml;
+  }
+
+  // ── Summary cards for the selected shift ────────────────────────────────
   const openAmtTotal  = openAmounts.reduce((s, a) => s + (a.amount||0), 0);
   const closeAmtTotal = closeAmounts.reduce((s, a) => s + (a.closingAmount||0), 0);
   const usedAmt = Math.max(0, openAmtTotal - closeAmtTotal);
 
-  const hasClosingAmounts = closeAmounts.length > 0;
   document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
-  document.getElementById('invExpenses').textContent   = '₱0.00'; // reserved for future
-  document.getElementById('invUsed').textContent       = hasClosingAmounts ? '₱' + fmt(usedAmt) : '—';
-  document.getElementById('invCloseTotal').textContent = hasClosingAmounts ? '₱' + fmt(closeAmtTotal) : '—';
+  document.getElementById('invCloseTotal').textContent = closeAmounts.length ? '₱' + fmt(closeAmtTotal) : '—';
+  const ingCountEl = document.getElementById('invIngCount');
+  if (ingCountEl) ingCountEl.textContent = openIngredients.length + ' item' + (openIngredients.length !== 1 ? 's' : '');
 
-  // ---- Opening list ----
+  // ── Opening list ─────────────────────────────────────────────────────────
   const openingList = document.getElementById('invOpeningList');
   let openHTML = '';
-
-  // Show a banner if opening was auto-seeded from previous shift's closing
   if (op.seededFrom) {
-    const prevDate = new Date(op.seededFrom + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' });
-    openHTML += `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:0.8rem;color:var(--green);font-weight:700;">
-      🔄 Auto-filled from previous shift closing (${prevDate})
-    </div>`;
+    const prevDate = op.seededFrom === 'previous shift' ? 'previous shift'
+      : new Date(op.seededFrom + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' });
+    openHTML += `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:0.8rem;color:var(--green);font-weight:700;">🔄 Auto-filled from ${prevDate}</div>`;
   }
-
   if (openIngredients.length) {
     openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients/Supplies</div>`;
     openHTML += openIngredients.map(i => `
       <div class="inv-list-item">
-        <div>
-          <span style="font-weight:700;">${escHtml(i.name)}</span>
-          <span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(i.unit||'pcs')}</span>
-          ${i.usedQty > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">-${i.usedQty} sold</span>` : ''}
-        </div>
-        <div style="text-align:right;">
-          <span style="font-weight:800;color:var(--orange);">${i.qty||0} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
-          ${i.usedQty > 0 ? `<div style="font-size:0.72rem;color:var(--green);font-weight:700;">${Math.max(0,(i.qty||0)-(i.usedQty||0))} left</div>` : ''}
-        </div>
+        <div><span style="font-weight:700;">${escHtml(i.name)}</span><span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(i.unit||'pcs')}</span></div>
+        <span style="font-weight:800;color:var(--orange);">${i.qty||0} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
       </div>`).join('');
   }
-
   if (openAmounts.length) {
     openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;">💵 Cash / Amounts</div>`;
     openHTML += openAmounts.map(a => `
@@ -2508,171 +2797,225 @@ function renderInventory() {
         <span style="font-weight:700;">${escHtml(a.name)}</span>
         <span style="font-weight:800;color:var(--blue);">₱${fmt(a.amount||0)}</span>
       </div>`).join('');
-    openHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;">
-      <span>CASH TOTAL</span><span style="color:var(--blue);">₱${fmt(openAmtTotal)}</span></div>`;
+    openHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH TOTAL</span><span style="color:var(--blue);">₱${fmt(openAmtTotal)}</span></div>`;
   }
-
   openingList.innerHTML = openHTML || `<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No opening inventory set.</p>`;
 
-  // ---- Closing list ----
+  // ── Closing list ─────────────────────────────────────────────────────────
   const closingList = document.getElementById('invClosingList');
   const hasClosing = closeIngredients.length > 0 || closeAmounts.length > 0;
-
   if (hasClosing) {
     let closeHTML = '';
-
+    if (cl.cashier) closeHTML += `<div style="font-size:0.75rem;color:var(--text3);margin-bottom:10px;">👤 <b>${escHtml(cl.cashier)}</b>${cl.savedAt ? ' · ' + cl.savedAt : ''}</div>`;
     if (closeIngredients.length) {
-      closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients/Supplies Left</div>`;
+      closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients Left</div>`;
       closeHTML += closeIngredients.map(i => {
-        const openIng = openIngredients.find(o => o.name === i.name);
-        const usedQty = openIng ? Math.max(0, (openIng.qty||0) - (i.closingQty||0)) : 0;
-        return `
-          <div class="inv-list-item">
-            <div>
-              <span style="font-weight:700;">${escHtml(i.name)}</span>
-              ${usedQty > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">-${usedQty} used</span>` : ''}
-            </div>
-            <span style="font-weight:800;color:var(--green);">${i.closingQty||0} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
-          </div>`;
+        const oi = openIngredients.find(o => o.name === i.name);
+        const used = oi ? Math.max(0, (oi.qty||0) - (i.closingQty||0)) : 0;
+        return `<div class="inv-list-item">
+          <div><span style="font-weight:700;">${escHtml(i.name)}</span>${used > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">-${used} used</span>` : ''}</div>
+          <span style="font-weight:800;color:var(--green);">${i.closingQty||0} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
+        </div>`;
       }).join('');
     }
-
     if (closeAmounts.length) {
       closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;">💵 Cash Left</div>`;
       closeHTML += closeAmounts.map(a => `
         <div class="inv-list-item">
-          <div>
-            <span style="font-weight:700;">${escHtml(a.name)}</span>
-            ${(a.notes) ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(a.notes)}</span>` : ''}
-          </div>
+          <div><span style="font-weight:700;">${escHtml(a.name)}</span>${a.notes ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(a.notes)}</span>` : ''}</div>
           <span style="font-weight:800;color:var(--green);">₱${fmt(a.closingAmount||0)}</span>
         </div>`).join('');
-      closeHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;">
-        <span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal)}</span></div>`;
+      closeHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal)}</span></div>`;
     }
-
-    // Cashier tag for closing
-    if (cl.cashier) {
-      closeHTML = `<div style=\"font-size:0.75rem;color:var(--text3);margin-bottom:10px;\">👤 <b>${escHtml(cl.cashier)}</b>${cl.savedAt ? ' · ' + cl.savedAt : ''}</div>` + closeHTML;
-    }
-    // Start New Shift button — only on today
-    const _todayKey = getLocalDateKey();
-    if (dateKey === _todayKey) {
-      closeHTML += `<div style=\"margin-top:16px;\">
-        <button class=\"btn btn-primary\" style=\"width:100%;font-size:0.88rem;\" onclick=\"startNewShift()\">
-          🔄 Start New Shift (Next Cashier)
-        </button>
-      </div>`;
+    if (isToday && viewIdx === shiftCount - 1) {
+      closeHTML += `<div style="margin-top:16px;"><button class="btn btn-primary" style="width:100%;font-size:0.88rem;" onclick="startNewShift()">🔄 Start New Shift (Next Cashier)</button></div>`;
     }
     closingList.innerHTML = closeHTML;
     document.getElementById('btnSetClosing').textContent = '✏️ Edit';
     document.getElementById('btnSetClosing').className = 'btn btn-outline btn-sm';
   } else {
     closingList.innerHTML = `<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">Not yet set. Click "+ Set Closing" to add.</p>`;
+    const btnCl = document.getElementById('btnSetClosing');
+    if (btnCl) { btnCl.textContent = '+ Set Closing'; btnCl.className = 'btn btn-primary btn-sm'; }
   }
 
-  // ---- Report section ----
-  if (hasClosing) {
+  // ── Comparison report ────────────────────────────────────────────────────
+  const anyShiftHasClosing = dayShifts.some(s => (s.closing?.ingredients?.length || s.closing?.amounts?.length));
+  if (anyShiftHasClosing) {
     reportSection.style.display = 'block';
+
+    // Build report across ALL shifts so the table shows the full day
+    // For single shift: Item | Opening | Closing | Used | Actual | Variance | Status
+    // For multi-shift:  Item | S1 Open | S1 Close | S1 Used | S2 Open | S2 Close | S2 Used | ... | Total Used | Status
+
+    const table = document.getElementById('invReportTable');
+    const thead = table.querySelector('thead tr');
     const tbody = document.getElementById('invReportBody');
+
+    // Gather all unique item names across every shift
+    const allIngNames = [...new Set(dayShifts.flatMap(s =>
+      [...(s.opening?.ingredients||[]), ...(s.closing?.ingredients||[])].map(i => i.name)
+    ))];
+    const allAmtNames = [...new Set(dayShifts.flatMap(s =>
+      [...(s.opening?.amounts||[]), ...(s.closing?.amounts||[])].map(a => a.name)
+    ))];
+
+    // Build dynamic header
+    if (shiftCount === 1) {
+      thead.innerHTML = '<th>Ingredient/Supply</th><th>Opening</th><th>Closing</th><th>Used/Sold</th><th>Actual Count</th><th>Variance</th><th>Status</th>';
+    } else {
+      let hcols = '<th>Ingredient/Supply</th>';
+      dayShifts.forEach((_, si) => {
+        hcols += `<th style="color:var(--orange);">S${si+1} Open</th><th style="color:var(--green);">S${si+1} Close</th><th style="color:var(--red);">S${si+1} Used</th>`;
+      });
+      hcols += '<th style="color:var(--red);font-weight:800;">Total Used</th><th>Status</th>';
+      thead.innerHTML = hcols;
+    }
+
     let rows = '';
+    let totalShorts = 0;
 
     // Ingredient rows
-    const allIngNames = [...new Set([
-      ...openIngredients.map(i => i.name),
-      ...closeIngredients.map(i => i.name)
-    ])];
     allIngNames.forEach(name => {
-      const opI = openIngredients.find(i => i.name === name);
-      const clI = closeIngredients.find(i => i.name === name);
-      const startQty = opI ? (opI.qty||0) : 0;
-      const endQty   = clI ? (clI.closingQty ?? clI.qty ?? 0) : 0;
-      const usedQty  = Math.max(0, startQty - endQty);
-      const unit     = opI ? (opI.unit||'pcs') : (clI ? clI.unit||'pcs' : 'pcs');
-      const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
-      const actualQty = hasActual ? clI.actualQty : null;
-      const variance  = hasActual ? (actualQty - endQty) : null;
-      const varianceColor = variance === null ? '' : variance === 0 ? 'var(--green)' : 'var(--red)';
-      const varianceLabel = variance === null ? '—' : variance === 0 ? '✓ Match' : (variance > 0 ? `+${variance} over` : `${variance} short`);
+      let totalUsed = 0;
+      let anyVariance = false;
+      let lastEndQty = null;
+      let unit = 'pcs';
 
-      let statusTag = '';
-      if (variance !== null && variance !== 0) statusTag = `<span class="inv-status-tag inv-tag-low">⚠️ Variance</span>`;
-      else if (usedQty === 0 && startQty > 0) statusTag = `<span class="inv-status-tag inv-tag-ok">✓ Full</span>`;
-      else if (endQty === 0 && startQty > 0) statusTag = `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`;
-      else if (endQty < startQty * 0.2 && startQty > 0) statusTag = `<span class="inv-status-tag inv-tag-low">⚡ Low</span>`;
-      else statusTag = `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
-
-      rows += `<tr>
-        <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
-        <td style="color:var(--orange);">${startQty} ${escHtml(unit)}</td>
-        <td style="color:var(--green);">${endQty} ${escHtml(unit)}</td>
-        <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty+' '+escHtml(unit) : '—'}</td>
-        <td style="color:var(--orange);font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">not recounted</span>'}</td>
-        <td style="color:${varianceColor};font-weight:800;">${varianceLabel}</td>
-        <td>${statusTag}</td>
-      </tr>`;
+      if (shiftCount === 1) {
+        const s = dayShifts[0];
+        const opI = (s.opening?.ingredients||[]).find(i => i.name === name);
+        const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
+        const startQty = opI ? (opI.qty||0) : 0;
+        const endQty   = clI ? (clI.closingQty ?? clI.qty ?? 0) : 0;
+        const usedQty  = Math.max(0, startQty - endQty);
+        unit = opI?.unit || clI?.unit || 'pcs';
+        const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
+        const actualQty = hasActual ? clI.actualQty : null;
+        const variance  = hasActual ? (actualQty - endQty) : null;
+        const vColor = variance === null ? '' : variance === 0 ? 'var(--green)' : 'var(--red)';
+        const vLabel = variance === null ? '—' : variance === 0 ? '✓ Match' : (variance > 0 ? `+${variance} over` : `${variance} short`);
+        if (variance !== null && variance !== 0) anyVariance = true;
+        if (hasActual && actualQty < endQty) totalShorts++;
+        let status = anyVariance ? `<span class="inv-status-tag inv-tag-low">⚠️ Variance</span>`
+          : endQty === 0 && startQty > 0 ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
+          : endQty < startQty * 0.2 && startQty > 0 ? `<span class="inv-status-tag inv-tag-low">⚡ Low</span>`
+          : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
+        rows += `<tr>
+          <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
+          <td style="color:var(--orange);">${startQty} ${escHtml(unit)}</td>
+          <td style="color:var(--green);">${endQty} ${escHtml(unit)}</td>
+          <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>
+          <td style="color:var(--orange);font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
+          <td style="color:${vColor};font-weight:800;">${vLabel}</td>
+          <td>${status}</td></tr>`;
+      } else {
+        let cols = `<td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>`;
+        dayShifts.forEach(s => {
+          const opI = (s.opening?.ingredients||[]).find(i => i.name === name);
+          const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
+          const startQty = opI ? (opI.qty||0) : 0;
+          const endQty   = clI ? (clI.closingQty ?? clI.qty ?? 0) : (opI ? null : null);
+          const usedQty  = (endQty !== null) ? Math.max(0, startQty - endQty) : 0;
+          unit = opI?.unit || clI?.unit || unit;
+          totalUsed += usedQty;
+          lastEndQty = endQty;
+          cols += `<td style="color:var(--orange);">${opI ? startQty : '—'}</td>`;
+          cols += `<td style="color:var(--green);">${clI ? (endQty ?? '—') : '—'}</td>`;
+          cols += `<td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>`;
+        });
+        const statusTag = lastEndQty === 0 ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
+          : totalUsed === 0 ? `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`
+          : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
+        cols += `<td style="color:var(--red);font-weight:800;">${totalUsed > 0 ? '-'+totalUsed+' '+escHtml(unit) : '—'}</td>`;
+        cols += `<td>${statusTag}</td>`;
+        rows += `<tr>${cols}</tr>`;
+      }
     });
 
     // Amount rows
-    const allAmtNames = [...new Set([
-      ...openAmounts.map(a => a.name),
-      ...closeAmounts.map(a => a.name)
-    ])];
     allAmtNames.forEach(name => {
-      const opA = openAmounts.find(a => a.name === name);
-      const clA = closeAmounts.find(a => a.name === name);
-      const startAmt = opA ? (opA.amount||0) : 0;
-      const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
-      const usedAmt2 = Math.max(0, startAmt - endAmt);
-      const notes    = clA ? (clA.notes||'') : '';
+      let totalUsedAmt = 0;
 
-      let statusTag = '';
-      if (!clA) statusTag = `<span class="inv-status-tag inv-tag-na">Not Closed</span>`;
-      else if (usedAmt2 === 0) statusTag = `<span class="inv-status-tag inv-tag-ok">✓ Full</span>`;
-      else if (endAmt < startAmt * 0.2 && startAmt > 0) statusTag = `<span class="inv-status-tag inv-tag-low">⚡ Low</span>`;
-      else statusTag = `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
-
-      rows += `<tr>
-        <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--blue);">(₱)</span></td>
-        <td style="color:var(--blue);">₱${fmt(startAmt)}</td>
-        <td style="color:var(--green);">₱${fmt(endAmt)}</td>
-        <td style="color:${usedAmt2>0?'var(--red)':'var(--text3)'};">${usedAmt2 > 0 ? '-₱'+fmt(usedAmt2) : '₱0.00'}</td>
-        <td>${statusTag}</td>
-        <td style="font-size:0.78rem;color:var(--text3);">${escHtml(notes)||'—'}</td>
-      </tr>`;
+      if (shiftCount === 1) {
+        const s = dayShifts[0];
+        const opA = (s.opening?.amounts||[]).find(a => a.name === name);
+        const clA = (s.closing?.amounts||[]).find(a => a.name === name);
+        const startAmt = opA ? (opA.amount||0) : 0;
+        const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
+        const usedAmt2 = Math.max(0, startAmt - endAmt);
+        const notes    = clA?.notes || '';
+        const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
+        const actualAmt = hasActualAmt ? parseFloat(clA.actualAmount) : null;
+        const amtVariance = hasActualAmt ? (actualAmt - endAmt) : null;
+        const vColor = amtVariance === null ? '' : amtVariance === 0 ? 'var(--green)' : 'var(--red)';
+        const vLabel = amtVariance === null ? '—' : amtVariance === 0 ? '✓ Match' : amtVariance < 0 ? '-₱'+fmt(Math.abs(amtVariance))+' short' : '+₱'+fmt(amtVariance)+' over';
+        if (hasActualAmt && actualAmt < endAmt) totalShorts++;
+        let status = !clA ? '<span class="inv-status-tag inv-tag-na">Not Closed</span>'
+          : amtVariance !== null && amtVariance !== 0 ? '<span class="inv-status-tag inv-tag-low">⚠️ Variance</span>'
+          : '<span class="inv-status-tag inv-tag-ok">✓ OK</span>';
+        const actualCell = hasActualAmt ? '₱'+fmt(actualAmt)+(notes ? ' ('+escHtml(notes)+')' : '') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>';
+        rows += '<tr>'
+          + '<td><strong>'+escHtml(name)+'</strong> <span style="font-size:0.72rem;color:var(--blue);">(₱)</span></td>'
+          + '<td style="color:var(--blue);">₱'+fmt(startAmt)+'</td>'
+          + '<td style="color:var(--green);">₱'+fmt(endAmt)+'</td>'
+          + '<td style="color:'+(usedAmt2>0?'var(--red)':'var(--text3)')+';">'+(usedAmt2>0?'-₱'+fmt(usedAmt2):'₱0.00')+'</td>'
+          + '<td style="color:var(--orange);font-weight:800;">'+actualCell+'</td>'
+          + '<td style="color:'+vColor+';font-weight:800;">'+vLabel+'</td>'
+          + '<td>'+status+'</td></tr>';
+      } else {
+        let cols = `<td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--blue);">(₱)</span></td>`;
+        dayShifts.forEach(s => {
+          const opA = (s.opening?.amounts||[]).find(a => a.name === name);
+          const clA = (s.closing?.amounts||[]).find(a => a.name === name);
+          const startAmt = opA ? (opA.amount||0) : 0;
+          const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
+          const usedAmt2 = opA ? Math.max(0, startAmt - endAmt) : 0;
+          totalUsedAmt += usedAmt2;
+          cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
+          cols += `<td style="color:var(--green);">${clA ? '₱'+fmt(endAmt) : '—'}</td>`;
+          cols += `<td style="color:${usedAmt2>0?'var(--red)':'var(--text3)'};">${usedAmt2>0?'-₱'+fmt(usedAmt2):'—'}</td>`;
+        });
+        cols += `<td style="color:var(--red);font-weight:800;">${totalUsedAmt>0?'-₱'+fmt(totalUsedAmt):'—'}</td>`;
+        cols += `<td><span class="inv-status-tag inv-tag-ok">✓ OK</span></td>`;
+        rows += `<tr>${cols}</tr>`;
+      }
     });
 
     tbody.innerHTML = rows;
 
-    // Balance check (amounts only)
-    const isBalanced = Math.abs(openAmtTotal - closeAmtTotal - usedAmt) < 0.01;
+    // Shorts count card
+    const shortsEl = document.getElementById('invShortsCount');
+    if (shortsEl) {
+      shortsEl.textContent = totalShorts === 0 ? '✓ None' : totalShorts + ' item' + (totalShorts !== 1 ? 's' : '');
+      shortsEl.style.color = totalShorts === 0 ? 'var(--green)' : 'var(--red)';
+    }
+
+    // Balance check — sum across all shifts
+    const totalOpenCash  = dayShifts.reduce((s, sh) => s + (sh.opening?.amounts||[]).reduce((a, x) => a + (x.amount||0), 0), 0);
+    const totalCloseCash = dayShifts.reduce((s, sh) => s + (sh.closing?.amounts||[]).reduce((a, x) => a + (x.closingAmount||0), 0), 0);
+    const totalUsedCash  = Math.max(0, totalOpenCash - totalCloseCash);
+    const isBalanced = Math.abs(totalOpenCash - totalCloseCash - totalUsedCash) < 0.01;
     const balanceEl = document.getElementById('invBalanceCheck');
     balanceEl.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
-        <div style="text-align:center;">
-          <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div>
-          <div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(openAmtTotal)}</div>
-        </div>
-        <div style="text-align:center;">
-          <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div>
-          <div style="font-size:1.2rem;font-weight:800;color:var(--red);">-₱${fmt(usedAmt)}</div>
-        </div>
-        <div style="text-align:center;">
-          <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div>
-          <div style="font-size:1.2rem;font-weight:800;color:var(--green);">₱${fmt(closeAmtTotal)}</div>
-        </div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div><div style="font-size:1.2rem;font-weight:800;color:var(--red);">-₱${fmt(totalUsedCash)}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">₱${fmt(totalCloseCash)}</div></div>
       </div>
       <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
-        ${isBalanced
-          ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span> <span style="font-size:0.85rem;color:var(--text3);">Opening and closing cash match.</span>`
-          : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(openAmtTotal - closeAmtTotal - usedAmt))}</span>`}
+        ${isBalanced ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>` : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash - totalUsedCash))}</span>`}
       </div>`;
     balanceEl.style.background = 'var(--card-bg)';
     balanceEl.style.borderColor = isBalanced ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+
+    const oldEl = document.getElementById('invAllShifts');
+    if (oldEl) oldEl.remove();
   } else {
     reportSection.style.display = 'none';
   }
 }
+
 
 // =================== PRINT ===================
 const printStyle = `
