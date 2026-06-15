@@ -3041,7 +3041,7 @@ function renderInventory() {
       return a + (v || 0);
     }, 0);
     const totalUsedCash  = Math.max(0, totalOpenCash - totalCloseCash);
-    const isBalanced = Math.abs(totalOpenCash - totalCloseCash - totalUsedCash) < 0.01;
+    const isBalanced = Math.abs(totalOpenCash - totalCloseCash) < 0.01;
     const balanceEl = document.getElementById('invBalanceCheck');
     balanceEl.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
