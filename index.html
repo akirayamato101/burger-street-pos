@@ -416,8 +416,9 @@
               <label style="font-size:0.68rem;color:var(--text3);font-weight:700;letter-spacing:1px;">📅 VIEWING DATE</label>
               <input type="date" class="input-field" id="inventoryDate" onchange="currentShiftIndex = -1; renderInventory()" />
             </div>
-            <button class="btn btn-outline btn-sm" id="btnInvPrev" onclick="shiftInventoryDate(-1)" style="padding:6px 10px;">◀ Prev</button>
-            <button class="btn btn-outline btn-sm" id="btnInvNext" onclick="shiftInventoryDate(1)" style="padding:6px 10px;">Next ▶</button>
+            <button class="btn btn-outline btn-sm" id="btnInvPrev" onclick="shiftInventoryDate(-1)" title="Previous cashier shift / inventory record" style="padding:6px 10px;">◀ Prev</button>
+            <span id="invShiftIndicator" style="font-size:0.75rem;color:var(--text3);font-weight:700;white-space:nowrap;"></span>
+            <button class="btn btn-outline btn-sm" id="btnInvNext" onclick="shiftInventoryDate(1)" title="Next cashier shift / inventory record" style="padding:6px 10px;">Next ▶</button>
             <button class="btn btn-primary" onclick="openInvModal('opening')" id="btnSetOpening">+ Set Opening Inventory</button>
           </div>
 
