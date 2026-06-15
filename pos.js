@@ -2177,7 +2177,8 @@ function getActiveShift(dateKey, data) {
 }
 
 // Auto-seed today's opening from the most recent previous closing (or last shift on same day).
-// Called when opening the inventory page if no opening exists for today.
+// If no closing was ever done, falls back to the most recent previous opening so the
+// inventory is never lost when a cashier skips the closing step.
 function seedOpeningFromLastClosing(dateKey, invData) {
   const shifts = getDayShifts(dateKey, invData);
   // If there's already a shift today with an opening, don't re-seed
@@ -2186,11 +2187,15 @@ function seedOpeningFromLastClosing(dateKey, invData) {
   // Look for last closing — could be a previous shift on the same day or a previous day
   let lastClosing = null;
   let seededFrom = null;
+  // Fallback: last known opening (when cashier never did a closing)
+  let lastOpeningFallback = null;
+  let fallbackFrom = null;
 
   // Check other shifts on same day first
   if (shifts.length > 1) {
     const prev = shifts[shifts.length - 2];
     if (prev.closing) { lastClosing = prev.closing; seededFrom = dateKey; }
+    else if (prev.opening) { lastOpeningFallback = prev.opening; fallbackFrom = dateKey; }
   }
 
   // Otherwise look at previous days
@@ -2206,28 +2211,50 @@ function seedOpeningFromLastClosing(dateKey, invData) {
         seededFrom = dates[i];
         break;
       }
+      // Record the most recent opening as a fallback (cashier skipped closing)
+      if (!lastOpeningFallback && lastPrevShift && lastPrevShift.opening) {
+        lastOpeningFallback = lastPrevShift.opening;
+        fallbackFrom = dates[i];
+      }
     }
   }
 
-  if (!lastClosing) return;
+  let newOpening;
 
-  const newOpening = {
-    ingredients: (lastClosing.ingredients || []).map(i => ({
-      name: i.name, unit: i.unit,
-      // If an actual physical count was recorded, use it as the true closing qty
-      qty: (i.actualQty !== null && i.actualQty !== undefined && i.actualQty !== '')
-        ? (parseInt(i.actualQty, 10) || 0)
-        : (i.closingQty ?? i.qty ?? 0)
-    })),
-    amounts: (lastClosing.amounts || []).map(a => ({
-      name: a.name,
-      // If an actual physical count was recorded, use it as the true closing amount
-      amount: (a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '')
-        ? (parseFloat(a.actualAmount) || 0)
-        : (a.closingAmount ?? a.amount ?? 0)
-    })),
-    seededFrom
-  };
+  if (lastClosing) {
+    // Normal path: seed from the closing inventory
+    newOpening = {
+      ingredients: (lastClosing.ingredients || []).map(i => ({
+        name: i.name, unit: i.unit,
+        // If an actual physical count was recorded, use it as the true closing qty
+        qty: (i.actualQty !== null && i.actualQty !== undefined && i.actualQty !== '')
+          ? (parseInt(i.actualQty, 10) || 0)
+          : (i.closingQty ?? i.qty ?? 0)
+      })),
+      amounts: (lastClosing.amounts || []).map(a => ({
+        name: a.name,
+        // If an actual physical count was recorded, use it as the true closing amount
+        amount: (a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '')
+          ? (parseFloat(a.actualAmount) || 0)
+          : (a.closingAmount ?? a.amount ?? 0)
+      })),
+      seededFrom
+    };
+  } else if (lastOpeningFallback) {
+    // Fallback: cashier never closed — carry the opening amounts forward as-is
+    // so inventory values are not lost.
+    newOpening = {
+      ingredients: (lastOpeningFallback.ingredients || []).map(i => ({
+        name: i.name, unit: i.unit, qty: (i.qty ?? 0)
+      })),
+      amounts: (lastOpeningFallback.amounts || []).map(a => ({
+        name: a.name, amount: (a.amount ?? 0)
+      })),
+      seededFrom: fallbackFrom
+    };
+  } else {
+    return; // Nothing to seed from
+  }
 
   if (!invData[dateKey]) invData[dateKey] = {};
   // Save as shifts array
@@ -2998,7 +3025,7 @@ function renderInventory() {
           + '<td><strong>'+escHtml(name)+'</strong> <span style="font-size:0.72rem;color:var(--blue);">(₱)</span></td>'
           + '<td style="color:var(--blue);">₱'+fmt(startAmt)+'</td>'
           + '<td style="color:var(--green);">'+(endAmt !== null ? '₱'+fmt(endAmt) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>')+'</td>'
-          + '<td style="color:'+(usedAmt2>0?'var(--red)':'var(--text3)')+';">'+(usedAmt2 !== null ? (usedAmt2>0?'-₱'+fmt(usedAmt2):'₱0.00') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>')+'</td>'
+          + '<td style="color:'+(usedAmt2>0?'var(--red)':'var(--text3)')+';">'+(usedAmt2 !== null ? (usedAmt2>0?'-₱'+fmt(usedAmt2):'<span style="color:var(--text3);font-size:0.78rem;">—</span>') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>')+'</td>'
           + '<td style="color:var(--orange);font-weight:800;">'+actualCell+'</td>'
           + '<td style="color:'+vColor+';font-weight:800;">'+vLabel+'</td>'
           + '<td>'+status+'</td></tr>';
