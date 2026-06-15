@@ -3030,22 +3030,9 @@ function renderInventory() {
       shortsEl.style.color = totalShorts === 0 ? 'var(--green)' : 'var(--red)';
     }
 
-    // Balance check — use FIRST shift opening and LAST shift closing only.
-    // Do NOT sum all shifts — each shift opening is the same cash passed forward, summing them inflates the total.
-    const firstShift = dayShifts[0];
-    const lastShift  = dayShifts[dayShifts.length - 1];
-    // Opening = first shift's recorded amount (actualAmount if owner recounted, otherwise amount)
-    const totalOpenCash = (firstShift?.opening?.amounts||[]).reduce((a, x) => {
-      const val = (x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '')
-        ? parseFloat(x.actualAmount) : parseFloat(x.amount);
-      return a + (val || 0);
-    }, 0);
-    // Closing = last shift's recorded amount (actualAmount if owner recounted, otherwise closingAmount)
-    const totalCloseCash = (lastShift?.closing?.amounts||[]).reduce((a, x) => {
-      const val = (x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '')
-        ? parseFloat(x.actualAmount) : parseFloat(x.closingAmount);
-      return a + (val || 0);
-    }, 0);
+    // Balance check — sum across all shifts
+    const totalOpenCash  = (dayShifts[0]?.opening?.amounts||[]).reduce((a, x) => { const v = (x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== "") ? parseFloat(x.actualAmount) : parseFloat(x.amount); return a + (v||0); }, 0);
+    const totalCloseCash = (dayShifts[dayShifts.length-1]?.closing?.amounts||[]).reduce((a, x) => { const v = (x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== "") ? parseFloat(x.actualAmount) : parseFloat(x.closingAmount); return a + (v||0); }, 0);
     const totalUsedCash  = Math.max(0, totalOpenCash - totalCloseCash);
     const isBalanced = Math.abs(totalOpenCash - totalCloseCash - totalUsedCash) < 0.01;
     const balanceEl = document.getElementById('invBalanceCheck');
