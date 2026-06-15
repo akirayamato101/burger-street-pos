@@ -3030,11 +3030,17 @@ function renderInventory() {
       shortsEl.style.color = totalShorts === 0 ? 'var(--green)' : 'var(--red)';
     }
 
-    // Balance check — first shift opening vs last shift closing (actual count wins over closingAmount)
-    const firstShift = dayShifts[0]; const lastShift = dayShifts[dayShifts.length-1];
-    const totalOpenCash = (firstShift?.opening?.amounts||[]).reduce((a,x) => a+(parseFloat(x.amount)||0), 0);
-    const totalCloseCash = (lastShift?.closing?.amounts||[]).reduce((a,x) => { const v=(x.actualAmount!==null&&x.actualAmount!==undefined&&x.actualAmount!=="") ? parseFloat(x.actualAmount) : parseFloat(x.closingAmount); return a+(v||0); }, 0);
-    const totalUsedCash = Math.max(0, totalOpenCash - totalCloseCash);
+    // Balance check — first shift opening, last shift closing (actual count overrides closingAmount)
+    const firstShift = dayShifts[0];
+    const lastShift  = dayShifts[dayShifts.length - 1];
+    const totalOpenCash = (firstShift?.opening?.amounts||[]).reduce((a, x) => a + (parseFloat(x.amount)||0), 0);
+    const totalCloseCash = (lastShift?.closing?.amounts||[]).reduce((a, x) => {
+      const v = (x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '')
+        ? parseFloat(x.actualAmount)
+        : parseFloat(x.closingAmount);
+      return a + (v || 0);
+    }, 0);
+    const totalUsedCash  = Math.max(0, totalOpenCash - totalCloseCash);
     const isBalanced = Math.abs(totalOpenCash - totalCloseCash - totalUsedCash) < 0.01;
     const balanceEl = document.getElementById('invBalanceCheck');
     balanceEl.innerHTML = `
