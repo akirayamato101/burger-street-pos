@@ -2198,10 +2198,18 @@ function seedOpeningFromLastClosing(dateKey, invData) {
 
   const newOpening = {
     ingredients: (lastClosing.ingredients || []).map(i => ({
-      name: i.name, unit: i.unit, qty: i.closingQty ?? i.qty ?? 0
+      name: i.name, unit: i.unit,
+      // If an actual physical count was recorded, use it as the true closing qty
+      qty: (i.actualQty !== null && i.actualQty !== undefined && i.actualQty !== '')
+        ? (parseInt(i.actualQty, 10) || 0)
+        : (i.closingQty ?? i.qty ?? 0)
     })),
     amounts: (lastClosing.amounts || []).map(a => ({
-      name: a.name, amount: a.closingAmount ?? a.amount ?? 0
+      name: a.name,
+      // If an actual physical count was recorded, use it as the true closing amount
+      amount: (a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '')
+        ? (parseFloat(a.actualAmount) || 0)
+        : (a.closingAmount ?? a.amount ?? 0)
     })),
     seededFrom
   };
@@ -2610,10 +2618,18 @@ function startNewShift() {
   const newShift = {
     opening: {
       ingredients: (lastClosing.ingredients || []).map(i => ({
-        name: i.name, unit: i.unit, qty: i.closingQty ?? i.qty ?? 0
+        name: i.name, unit: i.unit,
+        // If an actual physical count was recorded, use it as the true closing qty
+        qty: (i.actualQty !== null && i.actualQty !== undefined && i.actualQty !== '')
+          ? (parseInt(i.actualQty, 10) || 0)
+          : (i.closingQty ?? i.qty ?? 0)
       })),
       amounts: (lastClosing.amounts || []).map(a => ({
-        name: a.name, amount: a.closingAmount ?? a.amount ?? 0
+        name: a.name,
+        // If an actual physical count was recorded, use it as the true closing amount
+        amount: (a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '')
+          ? (parseFloat(a.actualAmount) || 0)
+          : (a.closingAmount ?? a.amount ?? 0)
       })),
       seededFrom: 'previous shift',
       cashier: cashierName,
@@ -2811,10 +2827,18 @@ function renderInventory() {
       closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients Left</div>`;
       closeHTML += closeIngredients.map(i => {
         const oi = openIngredients.find(o => o.name === i.name);
-        const used = oi ? Math.max(0, (oi.qty||0) - (i.closingQty||0)) : 0;
+        const hasActual = i.actualQty !== null && i.actualQty !== undefined && i.actualQty !== '';
+        const effectiveQty = hasActual ? (parseInt(i.actualQty, 10) || 0) : (i.closingQty || 0);
+        const used = oi ? Math.max(0, (oi.qty||0) - effectiveQty) : 0;
+        const short = hasActual ? ((i.closingQty || 0) - effectiveQty) : 0;
         return `<div class="inv-list-item">
-          <div><span style="font-weight:700;">${escHtml(i.name)}</span>${used > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">-${used} used</span>` : ''}</div>
-          <span style="font-weight:800;color:var(--green);">${i.closingQty||0} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
+          <div>
+            <span style="font-weight:700;">${escHtml(i.name)}</span>
+            ${used > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">-${used} used</span>` : ''}
+            ${hasActual && short > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">(${short} short — actual count used)</span>` : ''}
+            ${hasActual && short < 0 ? `<span style="font-size:0.72rem;color:var(--orange);margin-left:6px;">(${Math.abs(short)} over — actual count used)</span>` : ''}
+          </div>
+          <span style="font-weight:800;color:${hasActual && short !== 0 ? 'var(--orange)' : 'var(--green)'};">${effectiveQty} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
         </div>`;
       }).join('');
     }
