@@ -1582,8 +1582,21 @@ function saveDelivery() {
     const dateKey = getTodayInvKey();
     const invData = loadInventoryData();
     if (!invData[dateKey]) invData[dateKey] = {};
-    if (!invData[dateKey].opening) invData[dateKey].opening = { ingredients: [], amounts: [] };
-    const ings = invData[dateKey].opening.ingredients;
+
+    // Ensure shifts array exists (multi-shift format)
+    if (!invData[dateKey].shifts) {
+      const legacy = {};
+      if (invData[dateKey].opening) { legacy.opening = invData[dateKey].opening; delete invData[dateKey].opening; }
+      if (invData[dateKey].closing) { legacy.closing = invData[dateKey].closing; delete invData[dateKey].closing; }
+      invData[dateKey].shifts = [legacy];
+    }
+
+    // Add to the active (last) shift's opening ingredients
+    const activeShift = invData[dateKey].shifts[invData[dateKey].shifts.length - 1];
+    if (!activeShift.opening) activeShift.opening = { ingredients: [], amounts: [] };
+    if (!activeShift.opening.ingredients) activeShift.opening.ingredients = [];
+    const ings = activeShift.opening.ingredients;
+
     // Find existing ingredient (case-insensitive match)
     const existing = ings.find(i => i.name.trim().toLowerCase() === item.toLowerCase());
     if (existing) {
@@ -2762,6 +2775,21 @@ function renderInventory() {
   summaryCards.style.display = 'grid';
   compareGrid.style.display = 'grid';
 
+  // ── Status banner ─────────────────────────────────────────────────────────
+  const statusBannerEl = document.getElementById('invStatusBanner');
+  if (statusBannerEl) {
+    const hasClosing = (cl.ingredients && cl.ingredients.length) || (cl.amounts && cl.amounts.length);
+    if (hasClosing) {
+      statusBannerEl.style.display = 'block';
+      statusBannerEl.innerHTML = `<div style="padding:10px 16px;border-radius:10px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);font-size:0.85rem;font-weight:700;color:var(--green);">✅ Shift ${viewIdx + 1} closed${cl.cashier ? ' by ' + escHtml(cl.cashier) : ''}${cl.savedAt ? ' at ' + cl.savedAt : ''}.</div>`;
+    } else if (isToday) {
+      statusBannerEl.style.display = 'block';
+      statusBannerEl.innerHTML = `<div style="padding:10px 16px;border-radius:10px;background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.3);font-size:0.85rem;font-weight:700;color:var(--orange);">⏳ Shift open — no closing inventory yet${op.cashier ? ' (opened by ' + escHtml(op.cashier) + ')' : ''}.</div>`;
+    } else {
+      statusBannerEl.style.display = 'none';
+    }
+  }
+
   // ── Ingredient/shift list (always shown; selectable when 2+ shifts) ─────
   if (shiftSelector) {
     shiftSelector.style.display = 'block';
@@ -3077,7 +3105,7 @@ function renderInventory() {
         <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">₱${fmt(totalCloseCash)}</div></div>
       </div>
       <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
-        ${isBalanced ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>` : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash - totalUsedCash))}</span>`}
+        ${isBalanced ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>` : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash))}</span>`}
       </div>`;
     balanceEl.style.background = 'var(--card-bg)';
     balanceEl.style.borderColor = isBalanced ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
