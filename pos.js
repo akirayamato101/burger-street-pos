@@ -2211,7 +2211,14 @@ function seedOpeningFromLastClosing(dateKey, invData) {
     else if (prev.opening) { lastOpeningFallback = prev.opening; fallbackFrom = dateKey; }
   }
 
-  // Otherwise look at previous days
+  // Otherwise look at previous days. We want the MOST RECENT day that has
+  // any record at all. Within that most recent day, prefer its closing;
+  // if that day only has an opening (cashier edited opening but never
+  // saved a closing), use that opening instead — do NOT skip past it to
+  // search for a closing on some older day. Skipping past it was the bug:
+  // a deliberate opening edit (e.g. setting everything to 0 to test) on
+  // the most recent day was being ignored in favor of stale data from
+  // days further back that happened to have a closing saved.
   if (!lastClosing) {
     const dates = Object.keys(invData)
       .filter(d => d < dateKey)
@@ -2224,10 +2231,10 @@ function seedOpeningFromLastClosing(dateKey, invData) {
         seededFrom = dates[i];
         break;
       }
-      // Record the most recent opening as a fallback (cashier skipped closing)
-      if (!lastOpeningFallback && lastPrevShift && lastPrevShift.opening) {
+      if (lastPrevShift && lastPrevShift.opening) {
         lastOpeningFallback = lastPrevShift.opening;
         fallbackFrom = dates[i];
+        break;
       }
     }
   }
