@@ -2239,17 +2239,22 @@ function seedOpeningFromLastClosing(dateKey, invData) {
     newOpening = {
       ingredients: (lastClosing.ingredients || []).map(i => ({
         name: i.name, unit: i.unit,
-        // If an actual physical count was recorded, use it as the true closing qty
+        // If an actual physical count was recorded, use it as the true closing qty.
+        // Otherwise use closingQty strictly — it may legitimately be 0 (fully consumed).
+        // Do NOT fall back to i.qty (the opening qty): that would wrongly re-seed a
+        // fully-consumed ingredient back to its old opening count the next day.
         qty: (i.actualQty !== null && i.actualQty !== undefined && i.actualQty !== '')
           ? (parseInt(i.actualQty, 10) || 0)
-          : (i.closingQty ?? i.qty ?? 0)
+          : (i.closingQty ?? 0)
       })),
       amounts: (lastClosing.amounts || []).map(a => ({
         name: a.name,
-        // If an actual physical count was recorded, use it as the true closing amount
+        // If an actual physical count was recorded, use it as the true closing amount.
+        // Otherwise use closingAmount strictly — it may legitimately be 0 (fully spent).
+        // Do NOT fall back to a.amount (the opening amount).
         amount: (a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '')
           ? (parseFloat(a.actualAmount) || 0)
-          : (a.closingAmount ?? a.amount ?? 0)
+          : (a.closingAmount ?? 0)
       })),
       seededFrom
     };
@@ -2674,17 +2679,19 @@ function startNewShift() {
     opening: {
       ingredients: (lastClosing.ingredients || []).map(i => ({
         name: i.name, unit: i.unit,
-        // If an actual physical count was recorded, use it as the true closing qty
+        // Use actual physical count if recorded; otherwise closingQty (may be 0 = fully used).
+        // Never fall back to i.qty (opening qty) — that would re-inflate a consumed ingredient.
         qty: (i.actualQty !== null && i.actualQty !== undefined && i.actualQty !== '')
           ? (parseInt(i.actualQty, 10) || 0)
-          : (i.closingQty ?? i.qty ?? 0)
+          : (i.closingQty ?? 0)
       })),
       amounts: (lastClosing.amounts || []).map(a => ({
         name: a.name,
-        // If an actual physical count was recorded, use it as the true closing amount
+        // Use actual physical count if recorded; otherwise closingAmount (may be 0 = fully spent).
+        // Never fall back to a.amount (opening amount).
         amount: (a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '')
           ? (parseFloat(a.actualAmount) || 0)
-          : (a.closingAmount ?? a.amount ?? 0)
+          : (a.closingAmount ?? 0)
       })),
       seededFrom: 'previous shift',
       cashier: cashierName,
@@ -3036,7 +3043,10 @@ function renderInventory() {
         const opA = (s.opening?.amounts||[]).find(a => a.name === name);
         const clA = (s.closing?.amounts||[]).find(a => a.name === name);
         const startAmt = opA ? (opA.amount||0) : 0;
-        const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : null;
+        // Use closingAmount strictly — do NOT fall back to clA.amount (opening value).
+        // clA.amount is the opening amount carried on the closing record; falling back to it
+        // makes the "used" column show 0 even when cash was actually spent.
+        const endAmt   = clA ? (clA.closingAmount ?? 0) : null;
         const usedAmt2 = endAmt !== null ? Math.max(0, startAmt - endAmt) : null;
         const notes    = clA?.notes || '';
         const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
@@ -3063,8 +3073,9 @@ function renderInventory() {
           const opA = (s.opening?.amounts||[]).find(a => a.name === name);
           const clA = (s.closing?.amounts||[]).find(a => a.name === name);
           const startAmt = opA ? (opA.amount||0) : 0;
-          const endAmt   = clA ? (clA.closingAmount ?? clA.amount ?? 0) : 0;
-          const usedAmt2 = opA ? Math.max(0, startAmt - endAmt) : 0;
+          // Use closingAmount strictly — not clA.amount (which is the opening value).
+          const endAmt   = clA ? (clA.closingAmount ?? 0) : 0;
+          const usedAmt2 = (opA && clA) ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
           cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
           cols += `<td style="color:var(--green);">${clA ? '₱'+fmt(endAmt) : '—'}</td>`;
