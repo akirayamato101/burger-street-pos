@@ -371,7 +371,7 @@ function showPage(page) {
 
   document.querySelectorAll(`[data-page="${page}"]`).forEach(n => n.classList.add('active'));
 
-  const titles = { pos: 'New Order', orders: 'Order History', summary: 'My Summary', products: 'Manage Products', settings: 'Settings', inventory: 'Daily Inventory', reports: 'Inventory Totals' };
+  const titles = { pos: 'New Order', orders: 'Order History', summary: 'My Summary', products: 'Manage Products', settings: 'Settings', inventory: 'Daily Inventory', reports: 'Inventory Totals', debugdata: 'Debug Data' };
   document.getElementById('pageTitle').textContent = titles[page] || page;
 
   // Float cart only visible on New Order page
@@ -391,6 +391,7 @@ function showPage(page) {
   if (page === 'settings') refreshSettingsPage();
   if (page === 'inventory') { currentShiftIndex = -1; renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); }
   if (page === 'reports') { renderReports(); }
+  if (page === 'debugdata') { renderDebugData(); }
 }
 
 function toggleSidebar() {
@@ -2295,6 +2296,54 @@ function seedOpeningFromLastClosing(dateKey, invData) {
 function getTodayInvKey() {
   const d = document.getElementById('inventoryDate')?.value || getLocalDateKey();
   return d;
+}
+
+// Read-only debug view: shows exactly what is saved in storage for the most
+// recent days, so a cashier/owner can see raw data without guessing.
+// Does not modify or delete anything.
+function renderDebugData() {
+  const el = document.getElementById('debugDataOutput');
+  if (!el) return;
+  try {
+    const data = loadInventoryData();
+    const dates = Object.keys(data).sort().reverse().slice(0, 10);
+    if (!dates.length) {
+      el.textContent = 'No inventory data saved yet.';
+      return;
+    }
+    let out = `Today's date key: ${getLocalDateKey()}\n`;
+    out += `Currently viewing inventory date: ${getTodayInvKey()}\n`;
+    out += '='.repeat(50) + '\n\n';
+
+    dates.forEach(dateKey => {
+      const shifts = getDayShifts(dateKey, data);
+      out += `DATE: ${dateKey}  (${shifts.length} shift${shifts.length === 1 ? '' : 's'})\n`;
+      shifts.forEach((shift, idx) => {
+        out += `  Shift ${idx + 1}:\n`;
+        if (shift.opening) {
+          out += `    OPENING (cashier: ${shift.opening.cashier || '—'}, savedAt: ${shift.opening.savedAt || '—'}, seededFrom: ${shift.opening.seededFrom || '—'})\n`;
+          (shift.opening.ingredients || []).forEach(i => {
+            out += `      ${i.name}: qty=${i.qty}\n`;
+          });
+        } else {
+          out += `    OPENING: (none saved)\n`;
+        }
+        if (shift.closing) {
+          out += `    CLOSING (cashier: ${shift.closing.cashier || '—'}, savedAt: ${shift.closing.savedAt || '—'})\n`;
+          (shift.closing.ingredients || []).forEach(i => {
+            out += `      ${i.name}: closingQty=${i.closingQty ?? '—'}, actualQty=${i.actualQty ?? '(blank)'}\n`;
+          });
+        } else {
+          out += `    CLOSING: (none saved)\n`;
+        }
+      });
+      out += '\n';
+    });
+
+    el.textContent = out;
+  } catch (e) {
+    el.textContent = 'Error reading data: ' + e.message;
+  }
 }
 
 // Returns a sorted list of date keys that have at least one opening or
