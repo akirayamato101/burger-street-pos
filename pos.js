@@ -2824,7 +2824,7 @@ function renderInventory() {
         const ci = sClIng.find(c => c.name === oi.name);
         const unit = oi.unit || ci?.unit || 'pcs';
         const openQty = oi.qty || 0;
-        const closeQty = ci ? (ci.closingQty ?? ci.qty ?? 0) : null;
+        const closeQty = ci ? (ci.closingQty ?? 0) : null;
         return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3);border-radius:6px;padding:2px 8px;font-size:0.74rem;white-space:nowrap;">
           <span style="font-weight:700;">${escHtml(oi.name)}</span>
           <span style="color:var(--text3);">${openQty}${closeQty !== null ? ` → ${closeQty}` : ''} ${escHtml(unit)}</span>
@@ -2988,7 +2988,7 @@ function renderInventory() {
         const opI = (s.opening?.ingredients||[]).find(i => i.name === name);
         const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
         const startQty = opI ? (opI.qty||0) : 0;
-        const endQty   = clI ? (clI.closingQty ?? clI.qty ?? 0) : null;
+        const endQty   = clI ? (clI.closingQty ?? 0) : null;
         const usedQty  = endQty !== null ? Math.max(0, startQty - endQty) : null;
         unit = opI?.unit || clI?.unit || 'pcs';
         const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
@@ -3016,7 +3016,7 @@ function renderInventory() {
           const opI = (s.opening?.ingredients||[]).find(i => i.name === name);
           const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
           const startQty = opI ? (opI.qty||0) : 0;
-          const endQty   = clI ? (clI.closingQty ?? clI.qty ?? 0) : (opI ? null : null);
+          const endQty   = clI ? (clI.closingQty ?? 0) : (opI ? null : null);
           const usedQty  = (endQty !== null) ? Math.max(0, startQty - endQty) : 0;
           unit = opI?.unit || clI?.unit || unit;
           totalUsed += usedQty;
