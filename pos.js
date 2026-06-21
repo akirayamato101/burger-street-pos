@@ -1755,6 +1755,45 @@ function getCashAdvanceTotalToday() {
     .reduce((s, a) => s + (a.amount || 0), 0);
 }
 
+// Clears ONLY inventory-related transaction history (opening/closing records
+// per day, the delivery log, and the cash advance log). Does NOT touch the
+// product list (posState.customProducts), orders, or settings — unlike
+// confirmClearData() which wipes everything.
+function confirmClearInventoryRecords() {
+  const doDelete = () => {
+    const confirmed = window.confirm(
+      'Clear all inventory records?\n\nThis includes:\n• Every day\'s opening & closing inventory\n• The delivery log\n• The cash advance log\n\nYour product list, orders, and settings will NOT be affected.\n\nThis CANNOT be undone.'
+    );
+    if (!confirmed) return;
+    const confirmed2 = window.confirm('Last chance — are you absolutely sure?');
+    if (!confirmed2) return;
+
+    try { localStorage.removeItem(INV_STORE_KEY); } catch (e) {}
+    try { localStorage.removeItem(SHARED_DELIVERY_KEY); } catch (e) {}
+
+    // Cash advance log lives inside posState, not its own key — clear it there.
+    posState.cashAdvances = [];
+    savePos();
+
+    currentShiftIndex = -1;
+    renderInventory();
+    renderDeliveryLog();
+    renderCashAdvanceLog();
+
+    showToast('✅ Inventory records cleared. Product list & settings kept.', 'success');
+  };
+
+  if (posState.settings.ownerPin) {
+    openPinVerify(doDelete, posState.settings.ownerPin);
+  } else {
+    doDelete();
+  }
+}
+
+
+// Wipes EVERYTHING — orders, products, settings, and inventory records.
+// Use confirmClearInventoryRecords() instead if you only want to reset
+// inventory history while keeping the product list/orders/settings.
 function confirmClearData() {
   const doDelete = async () => {
     const confirmed = window.confirm(
