@@ -1755,89 +1755,105 @@ function getCashAdvanceTotalToday() {
     .reduce((s, a) => s + (a.amount || 0), 0);
 }
 
-// Clears ONLY inventory-related transaction history (opening/closing records
-// per day, the delivery log, and the cash advance log). Does NOT touch the
-// product list (posState.customProducts), orders, or settings — unlike
-// confirmClearData() which wipes everything.
-function confirmClearInventoryRecords() {
-  const doDelete = () => {
-    const confirmed = window.confirm(
-      'Clear all inventory records?\n\nThis includes:\n• Every day\'s opening & closing inventory\n• The delivery log\n• The cash advance log\n\nYour product list, orders, and settings will NOT be affected.\n\nThis CANNOT be undone.'
-    );
-    if (!confirmed) return;
-    const confirmed2 = window.confirm('Last chance — are you absolutely sure?');
-    if (!confirmed2) return;
+// =================== SELECTIVE CLEAR DATA ===================
+// Lets the owner pick exactly which categories to wipe, instead of an
+// all-or-nothing reset. Each category only touches its own storage keys.
+function confirmClearSelectedData() {
+  const wantOrders     = document.getElementById('clrOrders')?.checked;
+  const wantProducts   = document.getElementById('clrProducts')?.checked;
+  const wantInventory  = document.getElementById('clrInventory')?.checked;
+  const wantCashiers   = document.getElementById('clrCashiers')?.checked;
 
-    try { localStorage.removeItem(INV_STORE_KEY); } catch (e) {}
-    try { localStorage.removeItem(SHARED_DELIVERY_KEY); } catch (e) {}
-
-    // Cash advance log lives inside posState, not its own key — clear it there.
-    posState.cashAdvances = [];
-    savePos();
-
-    currentShiftIndex = -1;
-    renderInventory();
-    renderDeliveryLog();
-    renderCashAdvanceLog();
-
-    showToast('✅ Inventory records cleared. Product list & settings kept.', 'success');
-  };
-
-  if (posState.settings.ownerPin) {
-    openPinVerify(doDelete, posState.settings.ownerPin);
-  } else {
-    doDelete();
+  if (!wantOrders && !wantProducts && !wantInventory && !wantCashiers) {
+    showToast('Select at least one item to delete.', 'error');
+    return;
   }
-}
 
+  const labels = [];
+  if (wantOrders) labels.push('• All orders (every cashier)');
+  if (wantProducts) labels.push('• Products / menu list');
+  if (wantInventory) labels.push('• Inventory records, delivery log, cash advance log');
+  if (wantCashiers) labels.push('• Cashier accounts, PINs & settings');
 
-// Wipes EVERYTHING — orders, products, settings, and inventory records.
-// Use confirmClearInventoryRecords() instead if you only want to reset
-// inventory history while keeping the product list/orders/settings.
-function confirmClearData() {
   const doDelete = async () => {
     const confirmed = window.confirm(
-      'Are you sure you want to delete ALL data?\n\nThis includes:\n• All orders\n• All products\n• Inventory records\n• Settings\n\nThis CANNOT be undone.'
+      'Delete the following?\n\n' + labels.join('\n') + '\n\nThis CANNOT be undone.'
     );
     if (!confirmed) return;
     const confirmed2 = window.confirm('Last chance — are you absolutely sure?');
     if (!confirmed2) return;
 
-    // Wipe ALL localStorage for this app (catches every key, current and legacy/orphaned)
-    try { localStorage.clear(); } catch (e) {}
+    const cashiers = getCashiers();
 
-    // Wipe sessionStorage too
-    try { sessionStorage.clear(); } catch (e) {}
+    if (wantOrders) {
+      // Wipe orders from every cashier's individual storage, plus the active one in memory.
+      cashiers.forEach(c => {
+        try {
+          const key = getCashierStorageKey(c.id);
+          const s = localStorage.getItem(key);
+          if (s) {
+            const parsed = JSON.parse(s);
+            parsed.orders = [];
+            parsed.orderCounter = 1;
+            localStorage.setItem(key, JSON.stringify(parsed));
+          }
+        } catch (e) {}
+      });
+      posState.orders = [];
+      posState.orderCounter = 1;
+    }
 
-    // Delete any IndexedDB databases (legacy Dexie-based versions of this app)
-    try {
-      if (indexedDB.databases) {
-        const dbs = await indexedDB.databases();
-        await Promise.all((dbs || []).map(d => d.name ? indexedDB.deleteDatabase(d.name) : null));
-      } else {
-        indexedDB.deleteDatabase('BurgerStreetPOS');
-      }
-    } catch (e) {}
+    if (wantProducts) {
+      // Products are shared globally, but also mirrored into each cashier's
+      // own save — clear both so nothing reappears on next load.
+      const global = loadGlobalState();
+      global.customProducts = [];
+      saveGlobalState(global);
+      cashiers.forEach(c => {
+        try {
+          const key = getCashierStorageKey(c.id);
+          const s = localStorage.getItem(key);
+          if (s) {
+            const parsed = JSON.parse(s);
+            parsed.customProducts = [];
+            localStorage.setItem(key, JSON.stringify(parsed));
+          }
+        } catch (e) {}
+      });
+      posState.customProducts = [];
+    }
 
-    // Clear service worker caches so the next reload doesn't restore stale assets/data
-    try {
-      if (window.caches && caches.keys) {
-        const names = await caches.keys();
-        await Promise.all(names.map(n => caches.delete(n)));
-      }
-    } catch (e) {}
+    if (wantInventory) {
+      try { localStorage.removeItem(INV_STORE_KEY); } catch (e) {}
+      try { localStorage.removeItem(SHARED_DELIVERY_KEY); } catch (e) {}
+      // Cash advance log lives inside each cashier's own posState.
+      cashiers.forEach(c => {
+        try {
+          const key = getCashierStorageKey(c.id);
+          const s = localStorage.getItem(key);
+          if (s) {
+            const parsed = JSON.parse(s);
+            parsed.cashAdvances = [];
+            localStorage.setItem(key, JSON.stringify(parsed));
+          }
+        } catch (e) {}
+      });
+      posState.cashAdvances = [];
+    }
 
-    // Reset in-memory state so nothing gets re-saved before reload
-    activeCashier = null;
-    posState = {
-      orders: [], orderCounter: 1,
-      settings: { pin: CASHIER_PIN, cashierName: CASHIER_NAME, theme: 'dark', pinEnabled: false },
-      customProducts: []
-    };
-    cart = [];
+    if (wantCashiers) {
+      try { localStorage.removeItem(CASHIERS_KEY); } catch (e) {}
+      try { localStorage.removeItem(OWNER_GLOBAL_KEY); } catch (e) {}
+      try { localStorage.removeItem('burgStreet_activeSession'); } catch (e) {}
+      // Settings (including ownerPin) live in OWNER_GLOBAL_KEY (cleared above)
+      // and in posState — reset posState's copy too.
+      posState.settings = { pin: CASHIER_PIN, cashierName: CASHIER_NAME, theme: 'dark', pinEnabled: false };
+    }
 
-    showToast('All data cleared. Restarting...', 'success');
-    setTimeout(() => location.reload(), 1500);
+    savePos();
+
+    showToast('✅ Selected data cleared.', 'success');
+    setTimeout(() => location.reload(), 1200);
   };
 
   if (posState.settings.ownerPin) {
