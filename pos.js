@@ -1755,16 +1755,114 @@ function getCashAdvanceTotalToday() {
     .reduce((s, a) => s + (a.amount || 0), 0);
 }
 
-// =================== SELECTIVE CLEAR DATA ===================
+// =================== BACKUP & RESTORE ===================
+// Exports every storage key this app uses into one JSON file the owner can
+// save outside the app (Files, cloud, email, etc.) and use to restore later.
+// This is the safety net for the kind of permanent data loss that can happen
+// from Clear Data — a backup means a mistaken or accidental clear is no
+// longer "gone forever".
+function exportAllData() {
+  try {
+    const cashiers = getCashiers();
+    const perCashierData = {};
+    cashiers.forEach(c => {
+      const key = getCashierStorageKey(c.id);
+      const s = localStorage.getItem(key);
+      if (s) perCashierData[key] = JSON.parse(s);
+    });
+
+    const backup = {
+      _backupType: 'burgerStreetPOS',
+      _backupVersion: 1,
+      _exportedAt: new Date().toISOString(),
+      cashiers: cashiers,
+      globalState: loadGlobalState(),
+      perCashierData: perCashierData,
+      inventory: loadInventoryData(),
+      deliveries: loadSharedDeliveries(),
+      ingredientTemplate: loadIngredientTemplate()
+    };
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStamp = getLocalDateKey();
+    a.href = url;
+    a.download = `burger-street-pos-backup-${dateStamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('✅ Backup downloaded! Save it somewhere safe.', 'success');
+  } catch (e) {
+    console.error('Export failed:', e);
+    showToast('❌ Backup failed. See console for details.', 'error');
+  }
+}
+
+// Restores everything from a backup file produced by exportAllData().
+// This OVERWRITES current data for any key present in the backup — it's a
+// full restore, not a merge, so the owner is warned clearly before it runs.
+function importAllData(file) {
+  if (!file) return;
+
+  const doRestore = () => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const backup = JSON.parse(e.target.result);
+        if (backup._backupType !== 'burgerStreetPOS') {
+          showToast('❌ This does not look like a valid backup file.', 'error');
+          return;
+        }
+
+        const confirmed = window.confirm(
+          'Restore from backup taken on ' + (backup._exportedAt || 'unknown date') + '?\n\n' +
+          'This will OVERWRITE your current data with what is in the backup file.\n\n' +
+          'This CANNOT be undone.'
+        );
+        if (!confirmed) return;
+
+        if (backup.cashiers) saveCashiers(backup.cashiers);
+        if (backup.globalState) saveGlobalState(backup.globalState);
+        if (backup.perCashierData) {
+          Object.entries(backup.perCashierData).forEach(([key, val]) => {
+            try { localStorage.setItem(key, JSON.stringify(val)); } catch (err) {}
+          });
+        }
+        if (backup.inventory) saveInventoryData(backup.inventory);
+        if (backup.deliveries) saveSharedDeliveries(backup.deliveries);
+        if (backup.ingredientTemplate) saveIngredientTemplate(backup.ingredientTemplate);
+
+        showToast('✅ Backup restored! Reloading...', 'success');
+        setTimeout(() => location.reload(), 1200);
+      } catch (err) {
+        console.error('Restore failed:', err);
+        showToast('❌ Could not read that backup file.', 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  if (posState.settings.ownerPin) {
+    openPinVerify(doRestore, posState.settings.ownerPin);
+  } else {
+    doRestore();
+  }
+}
+
+
 // Lets the owner pick exactly which categories to wipe, instead of an
 // all-or-nothing reset. Each category only touches its own storage keys.
 function confirmClearSelectedData() {
   const wantOrders     = document.getElementById('clrOrders')?.checked;
   const wantProducts   = document.getElementById('clrProducts')?.checked;
   const wantInventory  = document.getElementById('clrInventory')?.checked;
+  const wantIngList    = document.getElementById('clrIngredientList')?.checked;
   const wantCashiers   = document.getElementById('clrCashiers')?.checked;
 
-  if (!wantOrders && !wantProducts && !wantInventory && !wantCashiers) {
+  if (!wantOrders && !wantProducts && !wantInventory && !wantIngList && !wantCashiers) {
     showToast('Select at least one item to delete.', 'error');
     return;
   }
@@ -1773,6 +1871,7 @@ function confirmClearSelectedData() {
   if (wantOrders) labels.push('• All orders (every cashier)');
   if (wantProducts) labels.push('• Products / menu list');
   if (wantInventory) labels.push('• Inventory records, delivery log, cash advance log');
+  if (wantIngList) labels.push('• Ingredient & supply name list');
   if (wantCashiers) labels.push('• Cashier accounts, PINs & settings');
 
   const doDelete = async () => {
@@ -1839,6 +1938,10 @@ function confirmClearSelectedData() {
         } catch (e) {}
       });
       posState.cashAdvances = [];
+    }
+
+    if (wantIngList) {
+      try { localStorage.removeItem(INGREDIENT_TEMPLATE_KEY); } catch (e) {}
     }
 
     if (wantCashiers) {
@@ -2203,6 +2306,50 @@ function saveOrderEdits() {
 // The closing inventory of one shift seeds the opening of the next.
 const INV_STORE_KEY = 'burgerStreetSharedInventory';
 const SHARED_DELIVERY_KEY = 'burgerStreetSharedDeliveries';
+// Standalone list of ingredient/supply NAMES + units (no quantities, no dates).
+// This is intentionally a separate store from INV_STORE_KEY so that clearing
+// daily opening/closing records (or any date's data) never erases the list of
+// what you stock — only the day-to-day counts.
+const INGREDIENT_TEMPLATE_KEY = 'burgerStreetIngredientTemplate';
+
+function loadIngredientTemplate() {
+  try {
+    const s = localStorage.getItem(INGREDIENT_TEMPLATE_KEY);
+    if (s) return JSON.parse(s);
+  } catch (e) {}
+  // First-ever run, nothing saved yet: seed with sensible defaults.
+  return {
+    ingredients: [
+      { name: 'Burger Patty', unit: 'pcs' },
+      { name: 'Burger Buns', unit: 'pcs' },
+      { name: 'Cheese Slice', unit: 'pcs' }
+    ],
+    amounts: [
+      { name: 'Pocket Money / Change' }
+    ]
+  };
+}
+function saveIngredientTemplate(tpl) {
+  try { localStorage.setItem(INGREDIENT_TEMPLATE_KEY, JSON.stringify(tpl)); } catch (e) {}
+}
+// Called whenever an opening inventory is saved — keeps the template in sync
+// with any new ingredient/amount names the cashier types in, WITHOUT storing
+// quantities. This is how the list grows over time and survives record clears.
+function syncIngredientTemplate(ingredients, amounts) {
+  const tpl = loadIngredientTemplate();
+  (ingredients || []).forEach(i => {
+    if (!i.name || !i.name.trim()) return;
+    const existing = tpl.ingredients.find(t => t.name.toLowerCase() === i.name.toLowerCase());
+    if (existing) existing.unit = i.unit || existing.unit;
+    else tpl.ingredients.push({ name: i.name, unit: i.unit || 'pcs' });
+  });
+  (amounts || []).forEach(a => {
+    if (!a.name || !a.name.trim()) return;
+    const existing = tpl.amounts.find(t => t.name.toLowerCase() === a.name.toLowerCase());
+    if (!existing) tpl.amounts.push({ name: a.name });
+  });
+  saveIngredientTemplate(tpl);
+}
 
 function loadInventoryData() {
   try {
@@ -2503,14 +2650,15 @@ function openInvModal(type) {
 
   if (type === 'opening') {
     const op = activeShift.opening || {};
-    invIngredients = (op.ingredients || [
-      { name: 'Burger Patty', unit: 'pcs', qty: 0 },
-      { name: 'Burger Buns',  unit: 'pcs', qty: 0 },
-      { name: 'Cheese Slice', unit: 'pcs', qty: 0 }
-    ]).map(i => ({...i}));
-    invAmounts = (op.amounts || [
-      { name: 'Pocket Money / Change', amount: 0 }
-    ]).map(a => ({...a}));
+    const tpl = loadIngredientTemplate();
+    invIngredients = (op.ingredients && op.ingredients.length
+      ? op.ingredients
+      : tpl.ingredients.map(i => ({ ...i, qty: 0 }))
+    ).map(i => ({...i}));
+    invAmounts = (op.amounts && op.amounts.length
+      ? op.amounts
+      : tpl.amounts.map(a => ({ ...a, amount: 0 }))
+    ).map(a => ({...a}));
     document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply do you have for today? (count in pieces, packs, bags, etc.)';
     document.getElementById('invAmtDesc').textContent = 'Enter the peso amount for today. (e.g. pocket money for change, petty cash, fund)';
   } else {
@@ -2732,6 +2880,7 @@ function saveInvModal() {
     const amts = invAmounts.filter(a => a.name && a.name.trim());
     if (!ings.length && !amts.length) { showToast('Please add at least one item.', 'error'); return; }
     shift.opening = { ingredients: ings, amounts: amts, cashier: cashierName, savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'}) };
+    syncIngredientTemplate(ings, amts);
   } else {
     // Read actualQty and actualAmount directly from DOM inputs to ensure
     // values are captured even if oninput didn't fire on the last edit (e.g. mobile).
