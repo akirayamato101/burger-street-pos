@@ -1783,21 +1783,59 @@ function exportAllData() {
       ingredientTemplate: loadIngredientTemplate()
     };
 
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const json = JSON.stringify(backup, null, 2);
     const dateStamp = getLocalDateKey();
+    const filename = `burger-street-pos-backup-${dateStamp}.json`;
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
     a.href = url;
-    a.download = `burger-street-pos-backup-${dateStamp}.json`;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
 
-    showToast('✅ Backup downloaded! Save it somewhere safe.', 'success');
+    // IMPORTANT: revoke the blob URL on a delay, not immediately. On some
+    // Android/PWA browsers, revoking right after click() invalidates the
+    // download before the OS-level download manager has actually fetched
+    // it, which silently fails the download with no visible error.
+    setTimeout(() => {
+      try { URL.revokeObjectURL(url); } catch (e) {}
+    }, 10000);
+
+    showToast('✅ Backup downloaded! Check your Downloads folder.', 'success');
   } catch (e) {
     console.error('Export failed:', e);
-    showToast('❌ Backup failed. See console for details.', 'error');
+    // Fallback: if Blob/anchor download is blocked entirely (some locked-down
+    // standalone PWA contexts), open the JSON directly in a new tab so the
+    // owner can still manually save/share it.
+    try {
+      const cashiers = getCashiers();
+      const perCashierData = {};
+      cashiers.forEach(c => {
+        const key = getCashierStorageKey(c.id);
+        const s = localStorage.getItem(key);
+        if (s) perCashierData[key] = JSON.parse(s);
+      });
+      const backup = {
+        _backupType: 'burgerStreetPOS', _backupVersion: 1, _exportedAt: new Date().toISOString(),
+        cashiers, globalState: loadGlobalState(), perCashierData,
+        inventory: loadInventoryData(), deliveries: loadSharedDeliveries(),
+        ingredientTemplate: loadIngredientTemplate()
+      };
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write('<pre style="white-space:pre-wrap;word-break:break-all;">' + JSON.stringify(backup, null, 2).replace(/</g, '&lt;') + '</pre>');
+        showToast('Direct download was blocked — opened backup as text instead. Select all & copy/save it.', 'error');
+      } else {
+        showToast('❌ Backup failed: ' + (e?.message || e), 'error');
+      }
+    } catch (e2) {
+      showToast('❌ Backup failed: ' + (e?.message || e), 'error');
+    }
   }
 }
 
