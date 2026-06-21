@@ -3,7 +3,7 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v2';
+const CACHE_NAME = 'burger-pos-v3';
 
 const ASSETS_TO_CACHE = [
   '/',
@@ -38,12 +38,41 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch: serve from cache, fallback to network
+// App code (HTML/JS/CSS) that affects business logic — e.g. pos.js, where the
+// inventory carry-over bug lives — must use NETWORK-FIRST. A pure cache-first
+// strategy here was the real reason past logic fixes never reached the app:
+// once pos.js was cached once, the service worker kept serving that exact
+// cached copy forever and never checked the network again, even after the
+// file on the server was corrected. Network-first always tries to fetch the
+// latest file first, only falling back to cache when offline.
+const NETWORK_FIRST_PATTERNS = [/\.html$/, /\.js$/, /\.css$/];
+
+function isNetworkFirst(request) {
+  const url = new URL(request.url);
+  return NETWORK_FIRST_PATTERNS.some(re => re.test(url.pathname));
+}
+
 self.addEventListener('fetch', event => {
+  if (isNetworkFirst(event.request)) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(event.request).then(cached => {
+        return cached || (event.request.mode === 'navigate' ? caches.match('/index.html') : undefined);
+      }))
+    );
+    return;
+  }
+
+  // Static assets (icons, images, fonts, third-party libs): cache-first is
+  // fine here since they rarely change and don't affect business logic.
   event.respondWith(
     caches.match(event.request).then(cached => {
       return cached || fetch(event.request).then(response => {
-        // Cache new successful responses
         if (response && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
@@ -51,7 +80,6 @@ self.addEventListener('fetch', event => {
         return response;
       });
     }).catch(() => {
-      // Offline fallback for navigation requests
       if (event.request.mode === 'navigate') {
         return caches.match('/index.html');
       }
