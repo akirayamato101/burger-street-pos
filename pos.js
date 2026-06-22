@@ -3521,9 +3521,13 @@ function renderInventory() {
         const amtVariance = hasActualAmt ? (actualAmt - endAmt) : null;
         const vColor = amtVariance === null ? '' : amtVariance === 0 ? 'var(--green)' : 'var(--red)';
         const vLabel = amtVariance === null ? '—' : amtVariance === 0 ? '✓ Match' : amtVariance < 0 ? '-₱'+fmt(Math.abs(amtVariance))+' short' : '+₱'+fmt(amtVariance)+' over';
-        if (hasActualAmt && actualAmt < endAmt) totalShorts++;
+        // Status rule (cash): Short shows the exact short peso amount (actual
+        // count vs expected closing amount); Empty when nothing is left; OK otherwise.
+        const shortAmtVal = (hasActualAmt && actualAmt < endAmt) ? (endAmt - actualAmt) : 0;
+        if (shortAmtVal > 0) totalShorts++;
         let status = !clA ? '<span class="inv-status-tag inv-tag-na">Not Closed</span>'
-          : amtVariance !== null && amtVariance !== 0 ? '<span class="inv-status-tag inv-tag-low">⚠️ Variance</span>'
+          : shortAmtVal > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ₱${fmt(shortAmtVal)}</span>`
+          : (endAmt === 0 || (hasActualAmt && actualAmt === 0)) ? '<span class="inv-status-tag inv-tag-low">⚡ Empty</span>'
           : '<span class="inv-status-tag inv-tag-ok">✓ OK</span>';
         const actualCell = hasActualAmt ? '₱'+fmt(actualAmt)+(notes ? ' ('+escHtml(notes)+')' : '') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>';
         rows += '<tr>'
@@ -3536,6 +3540,9 @@ function renderInventory() {
           + '<td>'+status+'</td></tr>';
       } else {
         let cols = `<td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--blue);">(₱)</span></td>`;
+        let totalShortAmtVal = 0;
+        let lastEndAmt = null;
+        let everHadAmt = false;
         dayShifts.forEach(s => {
           const opA = (s.opening?.amounts||[]).find(a => a.name === name);
           const clA = (s.closing?.amounts||[]).find(a => a.name === name);
@@ -3548,18 +3555,25 @@ function renderInventory() {
           const endAmt   = clA ? (clA.closingAmount ?? 0) : null;
           const usedAmt2 = (opA && clA && endAmt !== null) ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
+          lastEndAmt = endAmt;
+          if (opA && startAmt > 0) everHadAmt = true;
           const hasActualA = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
           const actualAmtA = hasActualA ? parseFloat(clA.actualAmount) : null;
           const shortAmtA  = (hasActualA && endAmt !== null) ? Math.max(0, endAmt - actualAmtA) : null;
-          if (shortAmtA !== null && shortAmtA > 0) totalShorts++;
+          if (shortAmtA !== null && shortAmtA > 0) { totalShorts++; totalShortAmtVal += shortAmtA; }
           cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
           cols += `<td style="color:var(--green);">${clA ? '₱'+fmt(endAmt) : '—'}</td>`;
           cols += `<td style="color:var(--orange);font-weight:700;">${hasActualA ? '₱'+fmt(actualAmtA) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${shortAmtA>0?'var(--red)':'var(--text3)'};font-weight:${shortAmtA>0?'800':'400'};">${shortAmtA !== null ? (shortAmtA > 0 ? '-₱'+fmt(shortAmtA) : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${usedAmt2>0?'var(--red)':'var(--text3)'};">${usedAmt2>0?'-₱'+fmt(usedAmt2):'—'}</td>`;
         });
+        // Status rule (cash): Short shows the exact total short peso amount across
+        // shifts; Empty when the last shift ended with ₱0 left; OK otherwise.
+        const amtStatusTag = totalShortAmtVal > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ₱${fmt(totalShortAmtVal)}</span>`
+          : (lastEndAmt === 0 && everHadAmt) ? '<span class="inv-status-tag inv-tag-low">⚡ Empty</span>'
+          : '<span class="inv-status-tag inv-tag-ok">✓ OK</span>';
         cols += `<td style="color:var(--red);font-weight:800;">${totalUsedAmt>0?'-₱'+fmt(totalUsedAmt):'—'}</td>`;
-        cols += `<td><span class="inv-status-tag inv-tag-ok">✓ OK</span></td>`;
+        cols += `<td>${amtStatusTag}</td>`;
         rows += `<tr>${cols}</tr>`;
       }
     });
