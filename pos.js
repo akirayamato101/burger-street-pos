@@ -3773,24 +3773,34 @@ function renderInventory() {
     // Balance check — first shift opening, last shift closing (actual count overrides closingAmount)
     const firstShift = dayShifts[0];
     const lastShift  = dayShifts[dayShifts.length - 1];
+    const lastShiftClosed = lastShift?.closing && (lastShift.closing.amounts||[]).length > 0;
     const totalOpenCash = (firstShift?.opening?.amounts||[]).reduce((a, x) => a + (parseFloat(x.amount)||0), 0);
-    const totalCloseCash = (lastShift?.closing?.amounts||[]).reduce((a, x) => {
-      const v = (x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '')
-        ? parseFloat(x.actualAmount)
-        : parseFloat(x.closingAmount);
-      return a + (v || 0);
-    }, 0);
-    const totalUsedCash  = Math.max(0, totalOpenCash - totalCloseCash);
-    const isBalanced = Math.abs(totalOpenCash - totalCloseCash) < 0.01;
+    // Only compute closing cash if the last shift has actually been closed.
+    // When closing is absent (shift still open), totalCloseCash would be 0 and
+    // the full opening amount would wrongly appear as "Cash Used / Discrepancy".
+    const totalCloseCash = lastShiftClosed
+      ? (lastShift.closing.amounts||[]).reduce((a, x) => {
+          const v = (x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '')
+            ? parseFloat(x.actualAmount)
+            : parseFloat(x.closingAmount);
+          return a + (v || 0);
+        }, 0)
+      : null;
+    const totalUsedCash  = totalCloseCash !== null ? Math.max(0, totalOpenCash - totalCloseCash) : null;
+    const isBalanced = totalCloseCash !== null && Math.abs(totalOpenCash - totalCloseCash) < 0.01;
     const balanceEl = document.getElementById('invBalanceCheck');
     balanceEl.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
         <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div><div style="font-size:1.2rem;font-weight:800;color:var(--red);">-₱${fmt(totalUsedCash)}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">₱${fmt(totalCloseCash)}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div><div style="font-size:1.2rem;font-weight:800;color:var(--red);">${totalUsedCash !== null ? '-₱'+fmt(totalUsedCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">${totalCloseCash !== null ? '₱'+fmt(totalCloseCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
       </div>
-      <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
-        ${isBalanced ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>` : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash))}</span>`}
+      <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${!lastShiftClosed?'rgba(234,179,8,0.1)':isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${!lastShiftClosed?'rgba(234,179,8,0.4)':isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
+        ${!lastShiftClosed
+          ? `<span style="font-size:1.3rem;">🕐</span> <span style="font-weight:800;color:#eab308;font-size:1rem;">Shift not yet closed — no balance data available</span>`
+          : isBalanced
+            ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>`
+            : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash))}</span>`}
       </div>`;
     balanceEl.style.background = 'var(--card-bg)';
     balanceEl.style.borderColor = isBalanced ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
