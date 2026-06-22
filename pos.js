@@ -1182,7 +1182,7 @@ function renderOrderHistory() {
         <td><strong style="color:var(--green)">₱${fmt(o.total)}</strong></td>
         <td>${o.payMethod === 'Cash' ? '₱' + fmt(o.change) : '—'}</td>
         <td><span class="badge badge-green">Paid</span></td>
-        <td><button class="btn-eye" onclick="viewOrder(${o.id})" title="View & Edit Order">👁</button></td>
+        <td><button class="btn-eye" onclick="viewOrder(${o.id})" title="View Order">👁</button></td>
       </tr>
     `;
   }).join('');
@@ -2235,14 +2235,10 @@ function renderOwnerSummary() {
 
 
 
-let editingOrderId = null;
-let editingOrderItems = [];
 
 function viewOrder(orderId) {
   const order = posState.orders.find(o => o.id === orderId);
   if (!order) return;
-  editingOrderId = orderId;
-  editingOrderItems = JSON.parse(JSON.stringify(order.items)); // deep copy
 
   const date = new Date(order.date);
   const timeStr = date.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
@@ -2254,89 +2250,29 @@ function viewOrder(orderId) {
     `<strong>Cashier:</strong> ${escHtml(order.cashier)}<br>` +
     `<strong>Payment:</strong> ${escHtml(order.payMethod)}`;
 
-  renderViewOrderItems();
-  document.getElementById('viewOrderModal').classList.remove('hidden');
-}
-
-function renderViewOrderItems() {
   const container = document.getElementById('viewOrderItems');
-  container.innerHTML = editingOrderItems.map((item, idx) => `
+  container.innerHTML = order.items.map(item => `
     <div class="order-edit-item">
       <div style="flex:1;min-width:0">
         <div class="oei-name">${escHtml(item.name)}</div>
         <div class="oei-price">₱${fmt(item.price)} each</div>
       </div>
-      <div class="oei-qty-ctrl">
-        <button class="oei-qty-btn" onclick="editOrderQty(${idx}, -1)">−</button>
-        <input type="number" class="oei-qty-val" value="${item.qty}" min="1" onchange="editOrderSetQty(${idx}, this.value)" />
-        <button class="oei-qty-btn" onclick="editOrderQty(${idx}, 1)">+</button>
-      </div>
+      <span style="font-weight:700;font-size:0.88rem;color:var(--text2);">×${item.qty}</span>
       <span class="oei-subtotal">₱${fmt(item.price * item.qty)}</span>
-      <button class="oei-del" onclick="editOrderRemove(${idx})" title="Remove item">✕</button>
     </div>
   `).join('');
 
-  // Update totals
-  const subtotal = editingOrderItems.reduce((s, i) => s + i.price * i.qty, 0);
+  const subtotal = order.items.reduce((s, i) => s + i.price * i.qty, 0);
   document.getElementById('viewOrderTotals').innerHTML = `
     <div style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--text3)">
       <span>Subtotal</span><span>₱${fmt(subtotal)}</span>
     </div>
     <div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:800;color:var(--orange)">
-      <span>TOTAL</span><span>₱${fmt(subtotal)}</span>
+      <span>TOTAL</span><span>₱${fmt(order.total !== undefined ? order.total : subtotal)}</span>
     </div>
   `;
-}
 
-function editOrderQty(idx, delta) {
-  editingOrderItems[idx].qty += delta;
-  if (editingOrderItems[idx].qty <= 0) {
-    editingOrderItems.splice(idx, 1);
-  }
-  renderViewOrderItems();
-}
-
-function editOrderSetQty(idx, val) {
-  const q = parseInt(val) || 1;
-  editingOrderItems[idx].qty = Math.max(1, q);
-  renderViewOrderItems();
-}
-
-function editOrderRemove(idx) {
-  editingOrderItems.splice(idx, 1);
-  renderViewOrderItems();
-}
-
-function saveOrderEdits() {
-  const orderIdx = posState.orders.findIndex(o => o.id === editingOrderId);
-  if (orderIdx < 0) return;
-
-  if (!editingOrderItems.length) {
-    showToast('Order must have at least one item.', 'error');
-    return;
-  }
-
-  // BUGFIX: editing a paid order's quantities (or removing/adding items)
-  // previously never touched ingredient inventory — autoDeductIngredients()
-  // only runs once, at the moment of the original payment. So increasing an
-  // item's qty here sold MORE food without ever deducting the extra
-  // ingredients, and decreasing/removing an item never gave the unused
-  // ingredients back. Over time this silently desyncs "remaining stock" from
-  // what was actually used. Fix: re-deduct based on the difference between
-  // the order's original items and the edited items.
-  const originalItems = posState.orders[orderIdx].items || [];
-  adjustIngredientsForOrderEdit(originalItems, editingOrderItems);
-
-  const subtotal = editingOrderItems.reduce((s, i) => s + i.price * i.qty, 0);
-  posState.orders[orderIdx].items = editingOrderItems;
-  posState.orders[orderIdx].subtotal = subtotal;
-  posState.orders[orderIdx].total = subtotal - (posState.orders[orderIdx].discountAmt || 0);
-
-  savePos();
-  closeModal('viewOrderModal');
-  renderOrderHistory();
-  renderSummary();
-  showToast('✅ Order updated!', 'success');
+  document.getElementById('viewOrderModal').classList.remove('hidden');
 }
 
 // =================== INVENTORY SYSTEM ===================

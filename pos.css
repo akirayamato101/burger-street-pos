@@ -1310,7 +1310,7 @@
     }
     .btn-eye:hover { background: rgba(59,130,246,0.25); }
 
-    /* Order edit modal inputs */
+    /* Order view modal */
     .order-edit-item {
       display: flex;
       align-items: center;
@@ -1321,13 +1321,7 @@
     .order-edit-item:last-child { border-bottom: none; }
     .oei-name { flex: 1; font-weight: 700; font-size: 0.88rem; }
     .oei-price { font-size: 0.78rem; color: var(--text3); }
-    .oei-qty-ctrl { display: flex; align-items: center; gap: 6px; }
-    .oei-qty-btn { width: 28px; height: 28px; border: 1px solid var(--border); background: var(--bg3); border-radius: 6px; font-size: 1rem; cursor: pointer; color: var(--text); display: flex; align-items: center; justify-content: center; transition: all 0.15s; font-family: 'Nunito', sans-serif; }
-    .oei-qty-btn:hover { background: var(--orange); color: #fff; border-color: var(--orange); }
-    .oei-qty-val { width: 36px; text-align: center; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.9rem; font-weight: 700; padding: 3px 0; font-family: 'Nunito', sans-serif; }
     .oei-subtotal { font-weight: 800; font-size: 0.88rem; color: var(--orange); min-width: 64px; text-align: right; }
-    .oei-del { width: 26px; height: 26px; border: none; background: rgba(239,68,68,0.1); border-radius: 6px; color: #ef4444; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; }
-    .oei-del:hover { background: rgba(239,68,68,0.25); }
 
     /* ========== BADGE ========== */
     .badge {
