@@ -806,14 +806,16 @@ function updateOrderNum() {
 // Returns null if OK, or an error message string if something can't be sold.
 function validateCartAgainstStock() {
   const baseStock = getIngredientStockMap();
-  if (!baseStock) return null; // no tracking active today, nothing to check
 
   // Accumulate total needed per ingredient across the whole cart, then
   // compare against what's actually available.
   const needed = {};
   for (const item of cart) {
     const product = allProducts.find(p => p.id == item.id);
-    if (!product || !product.recipe || !product.recipe.length) continue;
+    if (!product || !product.recipe || !product.recipe.length) {
+      // No recipe linked = no stock to sell from, block the whole order.
+      return `${item.name} has no ingredients/recipe set up and cannot be sold yet. Please link its recipe in Manage Products.`;
+    }
     for (const r of product.recipe) {
       const key = (r.ingredient || '').trim().toLowerCase();
       needed[key] = (needed[key] || 0) + (r.qty || 1) * item.qty;
@@ -821,8 +823,7 @@ function validateCartAgainstStock() {
   }
 
   for (const key in needed) {
-    const available = Object.prototype.hasOwnProperty.call(baseStock, key) ? baseStock[key] : null;
-    if (available === null) continue; // not tracked, don't block
+    const available = Object.prototype.hasOwnProperty.call(baseStock, key) ? baseStock[key] : 0;
     if (needed[key] > available) {
       return `Not enough stock to complete this order — an ingredient ran out. Please adjust quantities.`;
     }
@@ -954,31 +955,28 @@ function getIngredientStockMap() {
     const data = loadInventoryData();
     const activeShift = getActiveShift(dateKey, data);
     const openingIngs = activeShift?.opening?.ingredients || [];
-    if (!openingIngs.length) return null; // no ingredient tracking set up today
     const map = {};
     openingIngs.forEach(ing => {
       const key = (ing.name || '').trim().toLowerCase();
       if (!key) return;
       map[key] = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
     });
-    return map;
-  } catch(e) { return null; }
+    return map; // always an object now — never null — so missing ingredients = 0 stock, not "unlimited"
+  } catch(e) { return {}; }
 }
 
 // How many more units of this product can be added to the cart right now,
 // given remaining ingredient stock and what's already in the cart.
-// Returns Infinity if the product has no recipe or no ingredient tracking
-// is active today (unlimited / not stock-tracked).
+// A recipe ingredient with no recorded stock (or zero stock) blocks the sale —
+// missing/empty inventory means zero, never "unlimited".
 function getMaxAddable(product, stockMap) {
-  if (!product || !product.recipe || !product.recipe.length) return Infinity;
-  if (!stockMap) return Infinity;
+  if (!product) return 0;
+  if (!product.recipe || !product.recipe.length) return 0; // no recipe linked = no stock to sell
 
   let max = Infinity;
   product.recipe.forEach(recipeItem => {
     const key = (recipeItem.ingredient || '').trim().toLowerCase();
-    const remaining = Object.prototype.hasOwnProperty.call(stockMap, key) ? stockMap[key] : null;
-    // Ingredient isn't tracked today at all -> don't let it block the sale.
-    if (remaining === null) return;
+    const remaining = Object.prototype.hasOwnProperty.call(stockMap, key) ? stockMap[key] : 0;
     const perUnit = recipeItem.qty || 1;
     const possible = perUnit > 0 ? Math.floor(remaining / perUnit) : Infinity;
     if (possible < max) max = possible;
@@ -989,15 +987,16 @@ function getMaxAddable(product, stockMap) {
 // Net remaining stock map after subtracting what's currently in the cart
 // (so a second product sharing the same ingredient sees the true remainder).
 function getStockMapMinusCart(stockMap, excludeProductId = null) {
-  if (!stockMap) return null;
-  const map = { ...stockMap };
+  const map = { ...(stockMap || {}) };
   cart.forEach(item => {
     if (excludeProductId !== null && item.id == excludeProductId) return;
     const product = (allProducts || []).find(p => p.id == item.id);
     if (!product || !product.recipe || !product.recipe.length) return;
     product.recipe.forEach(recipeItem => {
       const key = (recipeItem.ingredient || '').trim().toLowerCase();
-      if (!Object.prototype.hasOwnProperty.call(map, key)) return;
+      // Ingredient may not have a key yet if it was never recorded — that
+      // still means zero stock, so seed it at 0 rather than skipping it.
+      if (!Object.prototype.hasOwnProperty.call(map, key)) map[key] = 0;
       map[key] = Math.max(0, map[key] - (recipeItem.qty || 1) * item.qty);
     });
   });
@@ -1008,7 +1007,6 @@ function getStockMapMinusCart(stockMap, excludeProductId = null) {
 // else already in the cart (including other units of the same product).
 function getRemainingAddable(product) {
   const baseStock = getIngredientStockMap();
-  if (!baseStock) return Infinity; // no tracking active today
   const netStock = getStockMapMinusCart(baseStock, product.id);
   return getMaxAddable(product, netStock);
 }
