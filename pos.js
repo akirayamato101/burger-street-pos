@@ -815,7 +815,7 @@ function validateCartAgainstStock() {
     const product = allProducts.find(p => p.id == item.id);
     if (!product || !product.recipe || !product.recipe.length) continue;
     for (const r of product.recipe) {
-      const key = (r.ingredient || '').toLowerCase();
+      const key = (r.ingredient || '').trim().toLowerCase();
       needed[key] = (needed[key] || 0) + (r.qty || 1) * item.qty;
     }
   }
@@ -908,7 +908,7 @@ function autoDeductIngredients(soldItems) {
       if (!product || !product.recipe || !product.recipe.length) return;
       product.recipe.forEach(recipeItem => {
         const totalDeduct = recipeItem.qty * item.qty;
-        const ing = openingIngs.find(i => i.name.toLowerCase() === recipeItem.ingredient.toLowerCase());
+        const ing = openingIngs.find(i => (i.name || '').trim().toLowerCase() === (recipeItem.ingredient || '').trim().toLowerCase());
         if (ing) {
           const available = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
           ing.usedQty = (ing.usedQty || 0) + Math.min(totalDeduct, available);
@@ -930,7 +930,7 @@ function getRemainingStock(ingredientName) {
     const data = loadInventoryData();
     const activeShift = getActiveShift(dateKey, data);
     const ing = (activeShift?.opening?.ingredients || []).find(
-      i => i.name.toLowerCase() === ingredientName.toLowerCase()
+      i => (i.name || '').trim().toLowerCase() === (ingredientName || '').trim().toLowerCase()
     );
     if (!ing) return null;
     return Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
@@ -957,7 +957,9 @@ function getIngredientStockMap() {
     if (!openingIngs.length) return null; // no ingredient tracking set up today
     const map = {};
     openingIngs.forEach(ing => {
-      map[ing.name.toLowerCase()] = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
+      const key = (ing.name || '').trim().toLowerCase();
+      if (!key) return;
+      map[key] = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
     });
     return map;
   } catch(e) { return null; }
@@ -973,7 +975,7 @@ function getMaxAddable(product, stockMap) {
 
   let max = Infinity;
   product.recipe.forEach(recipeItem => {
-    const key = (recipeItem.ingredient || '').toLowerCase();
+    const key = (recipeItem.ingredient || '').trim().toLowerCase();
     const remaining = Object.prototype.hasOwnProperty.call(stockMap, key) ? stockMap[key] : null;
     // Ingredient isn't tracked today at all -> don't let it block the sale.
     if (remaining === null) return;
@@ -994,7 +996,7 @@ function getStockMapMinusCart(stockMap, excludeProductId = null) {
     const product = (allProducts || []).find(p => p.id == item.id);
     if (!product || !product.recipe || !product.recipe.length) return;
     product.recipe.forEach(recipeItem => {
-      const key = (recipeItem.ingredient || '').toLowerCase();
+      const key = (recipeItem.ingredient || '').trim().toLowerCase();
       if (!Object.prototype.hasOwnProperty.call(map, key)) return;
       map[key] = Math.max(0, map[key] - (recipeItem.qty || 1) * item.qty);
     });
