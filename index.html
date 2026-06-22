@@ -148,11 +148,7 @@
           <span class="nav-icon">📦</span><span>Daily Inventory</span>
         </a>
       </li>
-      <li>
-        <a class="nav-item" onclick="showPage('reports')" data-page="reports">
-          <span class="nav-icon">📊</span><span>Inventory Totals</span>
-        </a>
-      </li>
+
       <li>
         <a class="nav-item" onclick="showPage('settings')" data-page="settings">
           <span class="nav-icon">⚙️</span><span>Settings</span>
@@ -610,78 +606,6 @@
       </div>
 
       <!-- ===== SETTINGS PAGE ===== -->
-      <!-- ===== SALES REPORTS PAGE ===== -->
-      <section id="page-reports" class="page">
-        <div class="page-header-bar">
-          <h3 class="section-title">📊 Inventory Totals</h3>
-          <div class="filter-row">
-            <select class="input-field" id="reportPeriod" onchange="renderReports()">
-              <option value="daily">Today</option>
-              <option value="weekly">This Week</option>
-              <option value="monthly">This Month</option>
-              <option value="yearly">This Year</option>
-              <option value="custom">Custom Range</option>
-            </select>
-            <button class="btn btn-outline btn-sm" onclick="shiftReportDate(-1)" title="Previous inventory record" style="padding:6px 10px;">◀ Prev</button>
-            <button class="btn btn-outline btn-sm" onclick="shiftReportDate(1)" title="Next inventory record" style="padding:6px 10px;">Next ▶</button>
-            <input type="date" class="input-field" id="reportFrom" onchange="renderReports()" style="display:none" />
-            <span id="reportToLabel" style="display:none;color:var(--text3);font-size:0.85rem;">to</span>
-            <input type="date" class="input-field" id="reportTo" onchange="renderReports()" style="display:none" />
-          </div>
-        </div>
-
-        <div id="reportPeriodLabel" style="font-size:0.82rem;color:var(--text3);margin-bottom:16px;font-weight:600;"></div>
-
-        <!-- Cash Advances Summary card -->
-        <div class="summary-cards" style="margin-bottom:20px;">
-          <div class="stat-card" style="border-left:4px solid var(--red);">
-            <div class="stat-card-icon">💸</div>
-            <div class="stat-card-info">
-              <span class="stat-card-label">Total Cash Advances</span>
-              <span class="stat-card-value" id="rptCashAdv" style="color:var(--red);">₱0.00</span>
-            </div>
-          </div>
-          <div class="stat-card" style="border-left:4px solid var(--blue);">
-            <div class="stat-card-icon">📅</div>
-            <div class="stat-card-info">
-              <span class="stat-card-label">Active Days (Inventory)</span>
-              <span class="stat-card-value" id="rptDays" style="color:var(--blue);">0</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Per-item inventory totals table -->
-        <div class="dash-section">
-          <h4 class="section-title" style="margin-bottom:6px;">🥩 Inventory Item Totals — All Cashiers</h4>
-          <p style="font-size:0.82rem;color:var(--text3);margin-bottom:14px;">Opening & closing counts per item, summed across all cashiers for the selected period. <strong style="color:var(--orange);">Short</strong> = difference between closing record and actual physical recount. <em style="color:var(--text3);">(est.) = estimated from sales data when no recount was entered.</em></p>
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Item / Supply</th>
-                  <th>Total Opening</th>
-                  <th>Total Closing</th>
-                  <th>Total Used</th>
-                  <th style="color:var(--orange);">Actual Count</th>
-                  <th style="color:var(--red);">Short / Over</th>
-                  <th>Cashiers Reported</th>
-                </tr>
-              </thead>
-              <tbody id="rptInventoryBody">
-                <tr><td colspan="7" class="empty-row">No inventory data for selected period.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Daily inventory summary per cashier -->
-        <div class="dash-section">
-          <h4 class="section-title" style="margin-bottom:14px;">📅 Daily Inventory by Cashier</h4>
-          <div id="rptDailyCashierInv">
-            <p style="color:var(--text3);font-size:0.88rem;text-align:center;padding:24px 0;">No data for selected period.</p>
-          </div>
-        </div>
-      </section>
 
       <section id="page-settings" class="page">
         <div class="page-header-bar">
