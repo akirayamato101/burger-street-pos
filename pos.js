@@ -204,7 +204,111 @@ function renderCashierList() {
 }
 
 function enterAsOwner() {
-  // Enter app as owner with no cashier selected — full access
+  // Check if an owner PIN has been set
+  const global = loadGlobalState();
+  const ownerPin = global.ownerPin || null;
+
+  if (!ownerPin) {
+    // No PIN set yet — enter directly (first-time setup scenario)
+    _doEnterAsOwner();
+    return;
+  }
+
+  // Show owner PIN prompt on the cashier login screen
+  _showOwnerPinPrompt(ownerPin);
+}
+
+let _ownerPinBuffer = '';
+let _ownerPinExpected = null;
+
+function _showOwnerPinPrompt(expectedPin) {
+  _ownerPinBuffer = '';
+  _ownerPinExpected = expectedPin;
+
+  let overlay = document.getElementById('ownerLoginPinOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'ownerLoginPinOverlay';
+    overlay.style.cssText = [
+      'position:fixed;inset:0;z-index:9999',
+      'background:rgba(0,0,0,0.75)',
+      'display:flex;align-items:center;justify-content:center',
+    ].join(';');
+    overlay.innerHTML = `
+      <div style="background:var(--card-bg);border-radius:20px;padding:32px 28px;width:100%;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+        <div style="font-size:2rem;margin-bottom:8px;">👑</div>
+        <div style="font-weight:800;font-size:1.1rem;margin-bottom:4px;">Owner Access</div>
+        <div style="font-size:0.85rem;color:var(--text3);margin-bottom:20px;">Enter your Owner PIN</div>
+        <div style="display:flex;gap:16px;justify-content:center;margin-bottom:16px;">
+          <div class="dot" id="opd0"></div>
+          <div class="dot" id="opd1"></div>
+          <div class="dot" id="opd2"></div>
+          <div class="dot" id="opd3"></div>
+        </div>
+        <p id="ownerPinLoginError" class="pin-error hidden">Incorrect PIN. Try again.</p>
+        <div class="numpad">
+          <button class="num-btn" onclick="_ownerLoginPin('1')">1</button>
+          <button class="num-btn" onclick="_ownerLoginPin('2')">2</button>
+          <button class="num-btn" onclick="_ownerLoginPin('3')">3</button>
+          <button class="num-btn" onclick="_ownerLoginPin('4')">4</button>
+          <button class="num-btn" onclick="_ownerLoginPin('5')">5</button>
+          <button class="num-btn" onclick="_ownerLoginPin('6')">6</button>
+          <button class="num-btn" onclick="_ownerLoginPin('7')">7</button>
+          <button class="num-btn" onclick="_ownerLoginPin('8')">8</button>
+          <button class="num-btn" onclick="_ownerLoginPin('9')">9</button>
+          <button class="num-btn blank"></button>
+          <button class="num-btn" onclick="_ownerLoginPin('0')">0</button>
+          <button class="num-btn del-btn" onclick="_ownerLoginPinDel()">&#x232B;</button>
+        </div>
+        <button class="btn" onclick="_closeOwnerPinPrompt()" style="margin-top:18px;width:100%;color:var(--text3);">Cancel</button>
+      </div>`;
+    document.body.appendChild(overlay);
+  } else {
+    overlay.style.display = 'flex';
+  }
+  _updateOwnerPinDots();
+}
+
+function _updateOwnerPinDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById('opd' + i);
+    if (dot) dot.classList.toggle('filled', i < _ownerPinBuffer.length);
+  }
+}
+
+function _ownerLoginPin(digit) {
+  if (_ownerPinBuffer.length >= 4) return;
+  _ownerPinBuffer += digit;
+  _updateOwnerPinDots();
+  if (_ownerPinBuffer.length === 4) {
+    setTimeout(() => {
+      if (_ownerPinBuffer === _ownerPinExpected) {
+        _closeOwnerPinPrompt();
+        _doEnterAsOwner();
+      } else {
+        const errEl = document.getElementById('ownerPinLoginError');
+        if (errEl) errEl.classList.remove('hidden');
+        _ownerPinBuffer = '';
+        _updateOwnerPinDots();
+        setTimeout(() => { if (errEl) errEl.classList.add('hidden'); }, 2000);
+      }
+    }, 200);
+  }
+}
+
+function _ownerLoginPinDel() {
+  _ownerPinBuffer = _ownerPinBuffer.slice(0, -1);
+  _updateOwnerPinDots();
+}
+
+function _closeOwnerPinPrompt() {
+  const overlay = document.getElementById('ownerLoginPinOverlay');
+  if (overlay) overlay.style.display = 'none';
+  _ownerPinBuffer = '';
+  _ownerPinExpected = null;
+}
+
+function _doEnterAsOwner() {
   activeCashier = { id: 'owner', name: 'Owner', pin: null };
   posState = {
     orders: [], orderCounter: 1,
