@@ -193,7 +193,12 @@ function renderCashierList() {
       <div class="cashier-avatar">${c.name.charAt(0).toUpperCase()}</div>
       <div class="cashier-select-name">${escHtml(c.name)}${!c.pin ? ' <span style="font-size:0.7rem;color:var(--orange);font-weight:700;">SET PIN</span>' : ''}</div>
     </div>
-  `).join('');
+  `).join('') + `
+    <div style="text-align:center;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+      <button class="btn btn-primary" onclick="enterAsOwner()" style="background:var(--orange);width:100%;max-width:240px;">
+        👑 Enter as Owner
+      </button>
+    </div>`;
 
   pinSection.style.display = selectedCashierId ? 'block' : 'none';
 }
