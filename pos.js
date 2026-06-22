@@ -945,7 +945,10 @@ function adjustIngredientsForOrderEdit(originalItems, newItems) {
       changed = true;
     });
 
-    if (changed) saveInventoryData(data);
+    if (changed) {
+      saveInventoryData(data);
+      if (document.getElementById('invOpeningList')) renderInventory();
+    }
   } catch(e) {
     console.warn('adjustIngredientsForOrderEdit error:', e);
   }
@@ -978,7 +981,13 @@ function autoDeductIngredients(soldItems) {
       });
     });
 
-    if (changed) saveInventoryData(data);
+    if (changed) {
+      saveInventoryData(data);
+      // If the Daily Inventory page is currently open, refresh it immediately
+      // so the live remaining-stock numbers update right after this sale,
+      // without requiring a manual page switch/reload.
+      if (document.getElementById('invOpeningList')) renderInventory();
+    }
   } catch(e) {
     console.warn('autoDeductIngredients error:', e);
   }
@@ -3423,15 +3432,22 @@ function renderInventory() {
       const clickable = shiftCount > 1;
 
       // Build a short preview of ingredients: name, opening qty → closing qty (if set)
+      // For the active shift today (no closing yet), show LIVE remaining
+      // stock (qty - usedQty) instead of the static opening qty, so this
+      // preview also updates immediately as sales happen.
+      const isThisActiveToday = isToday && i === shiftCount - 1 && !hasCl;
       const ingPreviewLimit = 4;
       const ingPreview = sOpIng.slice(0, ingPreviewLimit).map(oi => {
         const ci = sClIng.find(c => c.name === oi.name);
         const unit = oi.unit || ci?.unit || 'pcs';
         const openQty = oi.qty || 0;
         const closeQty = ci ? (ci.closingQty ?? 0) : null;
+        const remainingQty = Math.max(0, openQty - (oi.usedQty || 0));
+        const displayQty = isThisActiveToday ? remainingQty : openQty;
+        const displayColor = isThisActiveToday && remainingQty <= 0 && openQty > 0 ? 'var(--red)' : 'var(--text3)';
         return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3);border-radius:6px;padding:2px 8px;font-size:0.74rem;white-space:nowrap;">
           <span style="font-weight:700;">${escHtml(oi.name)}</span>
-          <span style="color:var(--text3);">${openQty}${closeQty !== null ? ` → ${closeQty}` : ''} ${escHtml(unit)}</span>
+          <span style="color:${displayColor};">${displayQty}${closeQty !== null ? ` → ${closeQty}` : ''} ${escHtml(unit)}</span>
         </span>`;
       }).join('');
       const moreCount = Math.max(0, sOpIng.length - ingPreviewLimit);
@@ -3481,29 +3497,35 @@ function renderInventory() {
   }
   if (openIngredients.length) {
     openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients/Supplies</div>`;
-    // Show live remaining stock (qty - usedQty) alongside the opening qty so
-    // sales deductions are visible here, not just on the New Order page.
+    // The headline number for each ingredient is now the LIVE REMAINING stock
+    // (opening qty - usedQty), not the static opening qty — so a sale
+    // immediately changes what's shown here, not just in fine print below it.
     // Only the ACTIVE shift on TODAY actually accrues usedQty from sales
-    // (autoDeductIngredients only ever touches today's active shift), so we
-    // only show the used/remaining breakdown for that shift to avoid
-    // implying past/other shifts are being live-tracked when they aren't.
+    // (autoDeductIngredients/adjustIngredientsForOrderEdit only ever touch
+    // today's active shift), so only that shift shows "remaining" as the
+    // headline; other shifts/dates show the plain opening qty since nothing
+    // is being live-deducted from them.
     const isActiveShiftToday = isToday && viewIdx === shiftCount - 1;
     openHTML += openIngredients.map(i => {
       const unit = escHtml(i.unit || 'pcs');
       const opened = i.qty || 0;
       const used = i.usedQty || 0;
       const remaining = Math.max(0, opened - used);
-      const showUsage = isActiveShiftToday && used > 0;
+      const headline = isActiveShiftToday ? remaining : opened;
+      const headlineColor = isActiveShiftToday
+        ? (remaining <= 0 ? 'var(--red)' : (used > 0 ? 'var(--green)' : 'var(--orange)'))
+        : 'var(--orange)';
       return `
-      <div class="inv-list-item" style="${showUsage ? 'flex-direction:column;align-items:stretch;gap:4px;' : ''}">
+      <div class="inv-list-item" style="flex-direction:column;align-items:stretch;gap:2px;">
         <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
           <div><span style="font-weight:700;">${escHtml(i.name)}</span><span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${unit}</span></div>
-          <span style="font-weight:800;color:var(--orange);">${opened} <span style="font-size:0.72rem;color:var(--text3);">${unit}</span></span>
+          <span style="font-weight:800;color:${headlineColor};">${headline} <span style="font-size:0.72rem;color:var(--text3);">${unit}</span></span>
         </div>
-        ${showUsage ? `<div style="display:flex;justify-content:flex-end;gap:10px;font-size:0.74rem;font-weight:700;">
-          <span style="color:var(--red);">🔥 Used: ${used} ${unit}</span>
-          <span style="color:${remaining > 0 ? 'var(--green)' : 'var(--red)'};">📦 Remaining: ${remaining} ${unit}</span>
+        ${isActiveShiftToday && used > 0 ? `<div style="display:flex;justify-content:flex-end;gap:10px;font-size:0.72rem;color:var(--text3);">
+          <span>Opened with ${opened} ${unit}</span>
+          <span style="color:var(--red);font-weight:700;">🔥 −${used} sold</span>
         </div>` : ''}
+        ${isActiveShiftToday && remaining <= 0 && opened > 0 ? `<div style="font-size:0.72rem;color:var(--red);font-weight:700;text-align:right;">🚫 Out of stock</div>` : ''}
       </div>`;
     }).join('');
   }
