@@ -450,13 +450,24 @@ function renderMenuGrid() {
     return;
   }
 
+  const baseStock = getIngredientStockMap();
+
   grid.innerHTML = products.map(p => {
     const cartItem = cart.find(i => i.id == p.id);
     const qty = cartItem ? cartItem.qty : 0;
     const inCart = qty > 0;
+
+    // Stock that would remain if we exclude what THIS product already has in
+    // cart (so its own "can I add one more" check doesn't double-subtract).
+    const netStock = getStockMapMinusCart(baseStock, p.id);
+    const addableMore = getMaxAddable(p, netStock);
+    const outOfStock = addableMore <= 0; // can't add even one more unit
+    const soldOutEntirely = outOfStock && !inCart; // never had any in cart either
+
     return `
-    <div class="menu-item ${inCart ? 'in-cart' : ''}" id="mc_${p.id}">
-      <div class="menu-item-tap" onclick="menuCardQty('${p.id}', 1)">
+    <div class="menu-item ${inCart ? 'in-cart' : ''} ${soldOutEntirely ? 'out-of-stock' : ''}" id="mc_${p.id}">
+      ${soldOutEntirely ? '<span class="menu-item-soldout-badge">Out of Stock</span>' : ''}
+      <div class="menu-item-tap" onclick="${soldOutEntirely ? '' : `menuCardQty('${p.id}', 1)`}">
         <span class="menu-item-name">${escHtml(p.name)}</span>
         <span class="menu-item-price">₱${fmt(p.price)}</span>
         <span class="menu-item-cat">${escHtml(p.category || '')}</span>
@@ -464,7 +475,7 @@ function renderMenuGrid() {
       <div class="menu-item-qty-row">
         <button class="miq-btn miq-minus ${inCart ? '' : 'miq-zero'}" onclick="menuCardQty('${p.id}', -1)">−</button>
         <span class="miq-count ${inCart ? 'miq-active' : ''}" id="miq_${p.id}">${qty}</span>
-        <button class="miq-btn miq-plus" onclick="menuCardQty('${p.id}', 1)">+</button>
+        <button class="miq-btn miq-plus ${outOfStock ? 'miq-disabled' : ''}" onclick="menuCardQty('${p.id}', 1)">+</button>
       </div>
     </div>
   `}).join('');
@@ -475,6 +486,13 @@ function addToCart(productId) {
   const p = allProducts.find(x => x.id == productId);
   if (!p) return;
   const existing = cart.find(i => i.id == productId);
+
+  const remainingAddable = getRemainingAddable(p);
+  if (remainingAddable <= 0) {
+    showToast(`🚫 ${p.name} is out of stock (ingredients depleted)`, 'error');
+    return;
+  }
+
   if (existing) {
     existing.qty += 1;
   } else {
@@ -485,6 +503,7 @@ function addToCart(productId) {
   renderCart();
   updateTotals();
   updateFloatCartBadge();
+  refreshStockLimits();
 }
 
 function menuCardQty(productId, delta) {
@@ -492,6 +511,15 @@ function menuCardQty(productId, delta) {
   if (!p) return;
 
   const existing = cart.find(i => i.id == productId);
+
+  if (delta > 0) {
+    const remainingAddable = getRemainingAddable(p);
+    if (remainingAddable <= 0) {
+      showToast(`🚫 ${p.name} is out of stock (ingredients depleted)`, 'error');
+      return;
+    }
+  }
+
   if (existing) {
     existing.qty += delta;
     if (existing.qty <= 0) {
@@ -501,6 +529,7 @@ function menuCardQty(productId, delta) {
       renderCart();
       updateTotals();
       updateFloatCartBadge();
+      refreshStockLimits();
       return;
     }
   } else {
@@ -513,6 +542,7 @@ function menuCardQty(productId, delta) {
   renderCart();
   updateTotals();
   updateFloatCartBadge();
+  refreshStockLimits();
 }
 
 // Update a single card's qty display WITHOUT re-rendering the whole grid
@@ -536,21 +566,72 @@ function updateCardDisplay(productId, qty) {
   card.classList.toggle('in-cart', qty > 0);
 }
 
+// Re-check stock availability for every visible card and update the plus
+// button / "Out of Stock" badge accordingly. Needed because adding or
+// removing one product can affect how much is left of a shared ingredient,
+// which changes whether OTHER products on the grid are still addable.
+function refreshStockLimits() {
+  const baseStock = getIngredientStockMap();
+  document.querySelectorAll('.menu-item').forEach(card => {
+    const id = card.id.replace('mc_', '');
+    const p = allProducts.find(x => x.id == id);
+    if (!p) return;
+
+    const cartItem = cart.find(i => i.id == p.id);
+    const inCart = !!cartItem && cartItem.qty > 0;
+
+    const netStock = getStockMapMinusCart(baseStock, p.id);
+    const addableMore = getMaxAddable(p, netStock);
+    const outOfStock = addableMore <= 0;
+    const soldOutEntirely = outOfStock && !inCart;
+
+    const plusBtn = card.querySelector('.miq-plus');
+    if (plusBtn) plusBtn.classList.toggle('miq-disabled', outOfStock);
+
+    card.classList.toggle('out-of-stock', soldOutEntirely);
+
+    const tap = card.querySelector('.menu-item-tap');
+    if (tap) tap.setAttribute('onclick', soldOutEntirely ? '' : `menuCardQty('${p.id}', 1)`);
+
+    let badge = card.querySelector('.menu-item-soldout-badge');
+    if (soldOutEntirely && !badge) {
+      badge = document.createElement('span');
+      badge.className = 'menu-item-soldout-badge';
+      badge.textContent = 'Out of Stock';
+      card.prepend(badge);
+    } else if (!soldOutEntirely && badge) {
+      badge.remove();
+    }
+  });
+}
+
 function removeFromCart(id) {
   cart = cart.filter(i => i.id !== id);
   updateCardDisplay(id, 0); // Reset card counter
   renderCart();
   updateTotals();
   updateFloatCartBadge();
+  refreshStockLimits();
 }
 
 function changeQty(id, delta) {
   const item = cart.find(i => i.id === id);
   if (!item) return;
+
+  if (delta > 0) {
+    const p = allProducts.find(x => x.id == id);
+    if (p && getRemainingAddable(p) <= 0) {
+      showToast(`🚫 ${p.name} is out of stock (ingredients depleted)`, 'error');
+      return;
+    }
+  }
+
   item.qty += delta;
   if (item.qty <= 0) { removeFromCart(id); return; }
   renderCart();
   updateTotals();
+  updateCardDisplay(id, item.qty);
+  refreshStockLimits();
 }
 
 function setQty(id, val) {
@@ -558,9 +639,31 @@ function setQty(id, val) {
   if (!item) return;
   const q = parseInt(val) || 0;
   if (q <= 0) { removeFromCart(id); return; }
+
+  const p = allProducts.find(x => x.id == id);
+  if (p) {
+    // Max this item can be set to = current qty + however many more are addable
+    const maxAddableMore = getRemainingAddable(p);
+    if (maxAddableMore !== Infinity) {
+      const maxTotal = item.qty + maxAddableMore;
+      if (q > maxTotal) {
+        showToast(`🚫 Only ${maxTotal} ${p.name} available (ingredients limited)`, 'error');
+        item.qty = maxTotal;
+        renderCart();
+        updateTotals();
+        updateFloatCartBadge();
+        updateCardDisplay(id, item.qty);
+        refreshStockLimits();
+        return;
+      }
+    }
+  }
+
   item.qty = q;
   updateTotals();
   updateFloatCartBadge();
+  updateCardDisplay(id, item.qty);
+  refreshStockLimits();
 }
 
 function renderCart() {
@@ -697,8 +800,45 @@ function updateOrderNum() {
 }
 
 // =================== PROCESS PAYMENT ===================
+// Final safety check before finalizing a sale: re-verify every cart line
+// against current ingredient stock (in case stock changed since items were
+// added — e.g. another cashier/device, or an inventory edit mid-order).
+// Returns null if OK, or an error message string if something can't be sold.
+function validateCartAgainstStock() {
+  const baseStock = getIngredientStockMap();
+  if (!baseStock) return null; // no tracking active today, nothing to check
+
+  // Accumulate total needed per ingredient across the whole cart, then
+  // compare against what's actually available.
+  const needed = {};
+  for (const item of cart) {
+    const product = allProducts.find(p => p.id == item.id);
+    if (!product || !product.recipe || !product.recipe.length) continue;
+    for (const r of product.recipe) {
+      const key = (r.ingredient || '').toLowerCase();
+      needed[key] = (needed[key] || 0) + (r.qty || 1) * item.qty;
+    }
+  }
+
+  for (const key in needed) {
+    const available = Object.prototype.hasOwnProperty.call(baseStock, key) ? baseStock[key] : null;
+    if (available === null) continue; // not tracked, don't block
+    if (needed[key] > available) {
+      return `Not enough stock to complete this order — an ingredient ran out. Please adjust quantities.`;
+    }
+  }
+  return null;
+}
+
 function processPayment() {
   if (!cart.length) return;
+
+  const stockError = validateCartAgainstStock();
+  if (stockError) {
+    showToast(`🚫 ${stockError}`, 'error');
+    renderMenuGrid();
+    return;
+  }
 
   const total = getTotal();
   const cash = parseFloat(document.getElementById('cashTendered')?.value) || 0;
@@ -795,6 +935,80 @@ function getRemainingStock(ingredientName) {
     if (!ing) return null;
     return Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
   } catch(e) { return null; }
+}
+
+// =================== STOCK LIMIT CHECKS (NEW ORDER PAGE) ===================
+// A product is only "limited" if it has a recipe (linked ingredients) AND
+// today's shift has ingredient records. Products with no recipe are treated
+// as unlimited (no inventory tracking configured for them), so this never
+// blocks items that were never meant to be stock-tracked.
+//
+// Remaining stock per ingredient = opening qty - usedQty (already deducted
+// from past completed sales today) - qty already sitting in the cart for
+// items that haven't been paid yet (since autoDeductIngredients only runs
+// AFTER payment, cart contents must be subtracted here too or the cashier
+// could add far more than is actually in stock before checking out).
+function getIngredientStockMap() {
+  try {
+    const dateKey = getLocalDateKey();
+    const data = loadInventoryData();
+    const activeShift = getActiveShift(dateKey, data);
+    const openingIngs = activeShift?.opening?.ingredients || [];
+    if (!openingIngs.length) return null; // no ingredient tracking set up today
+    const map = {};
+    openingIngs.forEach(ing => {
+      map[ing.name.toLowerCase()] = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
+    });
+    return map;
+  } catch(e) { return null; }
+}
+
+// How many more units of this product can be added to the cart right now,
+// given remaining ingredient stock and what's already in the cart.
+// Returns Infinity if the product has no recipe or no ingredient tracking
+// is active today (unlimited / not stock-tracked).
+function getMaxAddable(product, stockMap) {
+  if (!product || !product.recipe || !product.recipe.length) return Infinity;
+  if (!stockMap) return Infinity;
+
+  let max = Infinity;
+  product.recipe.forEach(recipeItem => {
+    const key = (recipeItem.ingredient || '').toLowerCase();
+    const remaining = Object.prototype.hasOwnProperty.call(stockMap, key) ? stockMap[key] : null;
+    // Ingredient isn't tracked today at all -> don't let it block the sale.
+    if (remaining === null) return;
+    const perUnit = recipeItem.qty || 1;
+    const possible = perUnit > 0 ? Math.floor(remaining / perUnit) : Infinity;
+    if (possible < max) max = possible;
+  });
+  return max;
+}
+
+// Net remaining stock map after subtracting what's currently in the cart
+// (so a second product sharing the same ingredient sees the true remainder).
+function getStockMapMinusCart(stockMap, excludeProductId = null) {
+  if (!stockMap) return null;
+  const map = { ...stockMap };
+  cart.forEach(item => {
+    if (excludeProductId !== null && item.id == excludeProductId) return;
+    const product = (allProducts || []).find(p => p.id == item.id);
+    if (!product || !product.recipe || !product.recipe.length) return;
+    product.recipe.forEach(recipeItem => {
+      const key = (recipeItem.ingredient || '').toLowerCase();
+      if (!Object.prototype.hasOwnProperty.call(map, key)) return;
+      map[key] = Math.max(0, map[key] - (recipeItem.qty || 1) * item.qty);
+    });
+  });
+  return map;
+}
+
+// How many more of `product` can still be added, accounting for everything
+// else already in the cart (including other units of the same product).
+function getRemainingAddable(product) {
+  const baseStock = getIngredientStockMap();
+  if (!baseStock) return Infinity; // no tracking active today
+  const netStock = getStockMapMinusCart(baseStock, product.id);
+  return getMaxAddable(product, netStock);
 }
 
 function confirmClearOrder() {
@@ -1611,6 +1825,7 @@ function saveDelivery() {
 
   closeDeliveryModal();
   renderDeliveryLog();
+  if (document.getElementById('menuGrid')) renderMenuGrid();
   showToast('✅ Delivery recorded & added to inventory!', 'success');
 }
 
@@ -2947,6 +3162,10 @@ function saveInvModal() {
   saveInventoryData(data);
   closeModal('invModal');
   renderInventory();
+  // Opening/closing inventory changed -> stock limits on the New Order page
+  // may now be different (e.g. ingredients just got recorded for the first
+  // time today), so refresh the menu grid if it's currently showing.
+  if (document.getElementById('menuGrid')) renderMenuGrid();
   showToast(invModalType === 'opening' ? '✅ Opening inventory saved!' : '✅ Closing inventory saved!', 'success');
 }
 
@@ -3000,6 +3219,7 @@ function startNewShift() {
   data[dateKey].shifts.push(newShift);
   saveInventoryData(data);
   renderInventory();
+  if (document.getElementById('menuGrid')) renderMenuGrid();
   showToast(`✅ New shift started! Opening seeded from previous shift's closing.`, 'success');
 }
 

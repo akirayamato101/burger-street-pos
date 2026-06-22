@@ -653,6 +653,43 @@
     .miq-plus:active { background: var(--orange-dark); transform: scale(0.93); }
     .miq-minus:active { background: var(--orange); border-color: var(--orange); color: #fff; transform: scale(0.93); }
     .miq-minus.miq-zero { opacity: 0.3; pointer-events: none; }
+    .miq-plus.miq-disabled {
+      opacity: 0.3;
+      pointer-events: none;
+      background: var(--bg3);
+      border-color: var(--border);
+      color: var(--text3);
+    }
+
+    /* Out-of-stock card: dimmed, non-interactive, with a badge */
+    .menu-item.out-of-stock {
+      opacity: 0.55;
+      cursor: not-allowed;
+      filter: grayscale(0.3);
+    }
+    .menu-item.out-of-stock:hover {
+      transform: none;
+      border-color: var(--border);
+      box-shadow: none;
+    }
+    .menu-item.out-of-stock .menu-item-tap {
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    .menu-item-soldout-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: #d64545;
+      color: #fff;
+      font-size: 0.62rem;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      padding: 3px 7px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      z-index: 2;
+    }
     .miq-count {
       flex: 1;
       text-align: center;
