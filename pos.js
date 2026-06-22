@@ -3633,12 +3633,15 @@ function renderInventory() {
 // =================== PRINT ===================
 const printStyle = `
   @media print {
+    @page { size: A4 portrait; margin: 16mm; }
     body > * { display: none !important; }
     #receiptModal { display: block !important; position: static !important; background: none !important; }
     #receiptModal .modal-box { box-shadow: none !important; border: none !important; max-width: 100% !important; }
     #receiptModal .modal-header, #receiptModal .modal-footer { display: none !important; }
     .receipt-biz-name { color: #000 !important; }
-    #invReportPrintArea { display: block !important; position: static !important; background: #fff !important; }
+    #invReportPrintArea { display: block !important; position: static !important; background: #fff !important; padding: 0 !important; }
+    #invReportPrintArea table { width: 100% !important; table-layout: auto; }
+    #invReportPrintArea tr { page-break-inside: avoid; }
     * { color: #000 !important; background: #fff !important; }
   }
 `;
@@ -3661,9 +3664,50 @@ function getInventoryReportHeaderInfo() {
   return { dateKey, dateLabel, cashierName };
 }
 
-// Builds a temporary, print-friendly DOM node containing the report table(s)
-// and balance check, cloned from the live page so we don't disturb the
-// on-screen UI. Used by both print and PDF paths.
+// Reads the live (possibly very wide, N-shifts-across) #invReportTable and
+// regroups it into a list of compact tables: one small table per shift
+// (Item | Open | Close | Actual | Short | Used), plus a final summary table
+// (Item | Total Used | Status). A wide table with 5 shifts has 27+ columns,
+// which is unreadable on any printed page no matter how small the font —
+// stacking narrow per-shift tables instead keeps every column legible.
+function getInventoryReportTablesGrouped() {
+  const table = document.getElementById('invReportTable');
+  const headerCells = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+  const bodyRows = [...table.querySelectorAll('tbody tr')].map(tr =>
+    [...tr.querySelectorAll('td')].map(td => td.textContent.replace(/\s+/g, ' ').trim())
+  );
+
+  const isSingleShift = headerCells[1] === 'Opening';
+  if (isSingleShift) {
+    // Already compact: Item | Opening | Closing | Used/Sold | Actual | Variance | Status
+    return {
+      shiftTables: [{ title: null, head: headerCells, rows: bodyRows }],
+      summaryTable: null
+    };
+  }
+
+  // Multi-shift wide format: Item, then 5 cols per shift, then Total Used, Status.
+  const shiftCount = (headerCells.length - 3) / 5;
+  const shiftTables = [];
+  for (let si = 0; si < shiftCount; si++) {
+    const startCol = 1 + si * 5;
+    const head = ['Item', 'Open', 'Close', 'Actual', 'Short', 'Used'];
+    const rows = bodyRows.map(r => [r[0], r[startCol], r[startCol+1], r[startCol+2], r[startCol+3], r[startCol+4]]);
+    shiftTables.push({ title: `Shift ${si + 1}`, head, rows });
+  }
+  const totalUsedCol = headerCells.length - 2;
+  const statusCol = headerCells.length - 1;
+  const summaryTable = {
+    title: 'Total Used & Status (All Shifts Combined)',
+    head: ['Item', 'Total Used', 'Status'],
+    rows: bodyRows.map(r => [r[0], r[totalUsedCol], r[statusCol]])
+  };
+  return { shiftTables, summaryTable };
+}
+
+// Builds a temporary, print-friendly DOM node containing one compact table
+// per shift plus the combined summary and balance check, so the print
+// preview stays readable on a normal page regardless of shift count.
 function buildInventoryReportPrintArea() {
   const reportSection = document.getElementById('invReportSection');
   if (!reportSection || reportSection.style.display === 'none') {
@@ -3672,9 +3716,22 @@ function buildInventoryReportPrintArea() {
   }
 
   const { dateLabel, cashierName } = getInventoryReportHeaderInfo();
-  const tableClone = document.getElementById('invReportTable').cloneNode(true);
-  const balanceClone = document.getElementById('invBalanceCheck').cloneNode(true);
   const shortsCount = document.getElementById('invShortsCount')?.textContent || '—';
+  const { shiftTables, summaryTable } = getInventoryReportTablesGrouped();
+  const balanceClone = document.getElementById('invBalanceCheck').cloneNode(true);
+
+  function renderTableHTML(t) {
+    const headHTML = t.head.map(h => `<th style="padding:6px 8px;border:1px solid #ccc;background:#e87c1e;color:#fff;text-align:left;font-size:0.78rem;">${escHtml(h)}</th>`).join('');
+    const rowsHTML = t.rows.map(r =>
+      `<tr>${r.map(c => `<td style="padding:5px 8px;border:1px solid #ddd;font-size:0.78rem;">${escHtml(c)}</td>`).join('')}</tr>`
+    ).join('');
+    return `
+      ${t.title ? `<div style="font-weight:700;font-size:0.88rem;margin:14px 0 6px;color:#222;">${escHtml(t.title)}</div>` : ''}
+      <table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
+        <thead><tr>${headHTML}</tr></thead>
+        <tbody>${rowsHTML}</tbody>
+      </table>`;
+  }
 
   const wrap = document.createElement('div');
   wrap.id = 'invReportPrintArea';
@@ -3686,8 +3743,9 @@ function buildInventoryReportPrintArea() {
       <div style="font-size:0.9rem;color:#444;margin-top:2px;">${escHtml(dateLabel)}</div>
       <div style="font-size:0.82rem;color:#666;">Prepared by: ${escHtml(cashierName)} &nbsp;|&nbsp; Shorts found: ${escHtml(shortsCount)}</div>
     </div>
+    ${shiftTables.map(renderTableHTML).join('')}
+    ${summaryTable ? renderTableHTML(summaryTable) : ''}
   `;
-  wrap.appendChild(tableClone);
   const balanceWrap = document.createElement('div');
   balanceWrap.style.marginTop = '18px';
   balanceWrap.appendChild(balanceClone);
@@ -3725,47 +3783,58 @@ function downloadInventoryReportPDF() {
 
   const { dateKey, dateLabel, cashierName } = getInventoryReportHeaderInfo();
   const shortsCount = document.getElementById('invShortsCount')?.textContent || '—';
+  const { shiftTables, summaryTable } = getInventoryReportTablesGrouped();
 
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
 
   // Header
   doc.setFontSize(16);
   doc.setFont(undefined, 'bold');
-  doc.text(BIZ_NAME, pageWidth / 2, 36, { align: 'center' });
+  doc.text(BIZ_NAME, pageWidth / 2, 40, { align: 'center' });
   doc.setFontSize(12);
-  doc.text('Daily Inventory Report', pageWidth / 2, 54, { align: 'center' });
+  doc.text('Daily Inventory Report', pageWidth / 2, 58, { align: 'center' });
   doc.setFont(undefined, 'normal');
   doc.setFontSize(10);
   doc.setTextColor(80);
-  doc.text(dateLabel, pageWidth / 2, 70, { align: 'center' });
-  doc.text(`Prepared by: ${cashierName}   |   Shorts found: ${shortsCount}`, pageWidth / 2, 84, { align: 'center' });
+  doc.text(dateLabel, pageWidth / 2, 74, { align: 'center' });
+  doc.text(`Prepared by: ${cashierName}   |   Shorts found: ${shortsCount}`, pageWidth / 2, 88, { align: 'center' });
   doc.setTextColor(0);
 
-  // Pull rows/headers straight from the rendered table so the PDF matches
-  // exactly what's on screen, plain-text only (strip emoji/HTML formatting).
-  const table = document.getElementById('invReportTable');
-  const headerCells = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
-  const bodyRows = [...table.querySelectorAll('tbody tr')].map(tr =>
-    [...tr.querySelectorAll('td')].map(td => td.textContent.replace(/\s+/g, ' ').trim())
-  );
-
-  doc.autoTable({
-    head: [headerCells],
-    body: bodyRows,
-    startY: 98,
-    styles: { fontSize: 8, cellPadding: 4 },
-    headStyles: { fillColor: [232, 124, 30], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248, 248, 248] },
-    margin: { left: 24, right: 24 }
+  // One compact table per shift (Item | Open | Close | Actual | Short | Used),
+  // stacked vertically — never wider than 6 columns, so it stays readable no
+  // matter how many shifts the day had. autoTable auto-breaks across pages.
+  let y = 104;
+  const allTables = summaryTable ? [...shiftTables, summaryTable] : shiftTables;
+  allTables.forEach((t, idx) => {
+    if (t.title) {
+      if (y > pageHeight - 80) { doc.addPage(); y = 40; }
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(20);
+      doc.text(t.title, 24, y);
+      doc.setTextColor(0);
+      y += 10;
+    }
+    doc.autoTable({
+      head: [t.head],
+      body: t.rows,
+      startY: y,
+      styles: { fontSize: 9, cellPadding: 5 },
+      headStyles: { fillColor: [232, 124, 30], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 248, 248] },
+      margin: { left: 24, right: 24 }
+    });
+    y = doc.lastAutoTable.finalY + 20;
   });
 
-  // Cash balance summary, plain text below the table
-  let y = doc.lastAutoTable.finalY + 24;
+  // Cash balance summary, plain text below the tables
+  if (y > pageHeight - 100) { doc.addPage(); y = 40; }
   const balanceText = document.getElementById('invBalanceCheck')?.textContent
     .replace(/\s+/g, ' ').trim() || '';
-  doc.setFontSize(10);
+  doc.setFontSize(11);
   doc.setFont(undefined, 'bold');
   doc.text('Cash Balance Summary', 24, y);
   doc.setFont(undefined, 'normal');
