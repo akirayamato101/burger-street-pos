@@ -3744,8 +3744,12 @@ function renderInventory() {
           const clA = (s.closing?.amounts||[]).find(a => a.name === name);
           const startAmt = opA ? (opA.amount||0) : 0;
           // Use closingAmount strictly — not clA.amount (which is the opening value).
-          const endAmt   = clA ? (clA.closingAmount ?? 0) : 0;
-          const usedAmt2 = (opA && clA) ? Math.max(0, startAmt - endAmt) : 0;
+          // If there is no closing record yet (clA is null), endAmt must be null
+          // (not 0). Defaulting to 0 was the bug: it made usedAmt2 = startAmt - 0
+          // = the full opening amount (e.g. ₱950), so an unclosed shift always
+          // showed 100% of opening cash as "used" even when nothing was spent.
+          const endAmt   = clA ? (clA.closingAmount ?? 0) : null;
+          const usedAmt2 = (opA && clA && endAmt !== null) ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
           cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
           cols += `<td style="color:var(--green);">${clA ? '₱'+fmt(endAmt) : '—'}</td>`;
