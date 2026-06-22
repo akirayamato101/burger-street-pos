@@ -3481,11 +3481,31 @@ function renderInventory() {
   }
   if (openIngredients.length) {
     openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;">🥩 Ingredients/Supplies</div>`;
-    openHTML += openIngredients.map(i => `
-      <div class="inv-list-item">
-        <div><span style="font-weight:700;">${escHtml(i.name)}</span><span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(i.unit||'pcs')}</span></div>
-        <span style="font-weight:800;color:var(--orange);">${i.qty||0} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
-      </div>`).join('');
+    // Show live remaining stock (qty - usedQty) alongside the opening qty so
+    // sales deductions are visible here, not just on the New Order page.
+    // Only the ACTIVE shift on TODAY actually accrues usedQty from sales
+    // (autoDeductIngredients only ever touches today's active shift), so we
+    // only show the used/remaining breakdown for that shift to avoid
+    // implying past/other shifts are being live-tracked when they aren't.
+    const isActiveShiftToday = isToday && viewIdx === shiftCount - 1;
+    openHTML += openIngredients.map(i => {
+      const unit = escHtml(i.unit || 'pcs');
+      const opened = i.qty || 0;
+      const used = i.usedQty || 0;
+      const remaining = Math.max(0, opened - used);
+      const showUsage = isActiveShiftToday && used > 0;
+      return `
+      <div class="inv-list-item" style="${showUsage ? 'flex-direction:column;align-items:stretch;gap:4px;' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+          <div><span style="font-weight:700;">${escHtml(i.name)}</span><span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${unit}</span></div>
+          <span style="font-weight:800;color:var(--orange);">${opened} <span style="font-size:0.72rem;color:var(--text3);">${unit}</span></span>
+        </div>
+        ${showUsage ? `<div style="display:flex;justify-content:flex-end;gap:10px;font-size:0.74rem;font-weight:700;">
+          <span style="color:var(--red);">🔥 Used: ${used} ${unit}</span>
+          <span style="color:${remaining > 0 ? 'var(--green)' : 'var(--red)'};">📦 Remaining: ${remaining} ${unit}</span>
+        </div>` : ''}
+      </div>`;
+    }).join('');
   }
   if (openAmounts.length) {
     openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;">💵 Cash / Amounts</div>`;
