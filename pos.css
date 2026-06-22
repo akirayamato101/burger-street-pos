@@ -458,18 +458,19 @@
     /* ========== PAGE CONTENT ========== */
     .page-content {
       flex: 1;
-      overflow: hidden;
+      overflow-y: auto;
+      overflow-x: hidden;
       min-height: 0;
       position: relative;
     }
 
     .page { display: none; }
-    .page.active { display: block; overflow-y: auto; position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 70px 24px calc(24px + env(safe-area-inset-bottom, 0px)); }
+    .page.active { display: block; padding: 24px 24px calc(24px + env(safe-area-inset-bottom, 0px)); }
 
     /* POS page fills the content area so pos-layout height:100% works */
     #page-pos {
       padding: 0;
-      margin: 0 -24px -24px;
+      margin: 0;
     }
     #page-pos.active {
       display: flex;
@@ -1542,12 +1543,12 @@
       .btn-logout::before { content: '🔒'; font-size: 1.05rem; }
 
       .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px)); }
-      #page-pos { height: auto; margin: 0 -14px -14px; }
+      #page-pos { height: auto; }
       .menu-panel { min-height: 0; height: auto; }
       .order-panel { display: none; }
       .order-panel.show-mobile { display: flex; position: fixed; inset: 0; z-index: 250; border-radius: 0; }
 
-      .page.active { padding: 70px 14px calc(14px + env(safe-area-inset-bottom, 0px)); }
+      .page.active { padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)); }
       #page-pos.active { padding: 0 !important; }
       .menu-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
       .summary-cards { grid-template-columns: 1fr 1fr; }
