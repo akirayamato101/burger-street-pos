@@ -3,14 +3,13 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v3';
+const CACHE_NAME = 'burger-pos-v4';
 
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/css/style.css',
-  '/js/db.js',
-  '/js/app.js',
+  '/pos.css',
+  '/pos.js',
   '/manifest.json',
   // Dexie.js from CDN — cache it so app works fully offline
   'https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js'

@@ -465,7 +465,7 @@
     }
 
     .page { display: none; }
-    .page.active { display: block; padding: 3px 3px calc(3px + env(safe-area-inset-bottom, 0px)); }
+    .page.active { display: block; padding: 24px 24px calc(24px + env(safe-area-inset-bottom, 0px)); }
 
     /* POS page fills the content area so pos-layout height:100% works */
     #page-pos {
