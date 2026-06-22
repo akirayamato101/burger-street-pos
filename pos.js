@@ -2335,27 +2335,47 @@ function renderOwnerSummary() {
   const summaryDate = document.getElementById('ownerSummaryDate')?.value || new Date().toISOString().split('T')[0];
   const container = document.getElementById('ownerSummaryContent');
   if (!container) return;
-  let totalSales = 0, totalOrders = 0, rows = '';
+  let totalSales = 0, totalCashAdv = 0, totalOrders = 0, rows = '';
   cashiers.forEach(c => {
-    let orders = [];
-    try { const s = localStorage.getItem(getCashierStorageKey(c.id)); if (s) orders = JSON.parse(s).orders || []; } catch(e) {}
+    let orders = [], cashAdvances = [];
+    try {
+      const s = localStorage.getItem(getCashierStorageKey(c.id));
+      if (s) {
+        const parsed = JSON.parse(s);
+        orders = parsed.orders || [];
+        cashAdvances = parsed.cashAdvances || [];
+      }
+    } catch(e) {}
     const dayOrders = orders.filter(o => o.date && o.date.startsWith(summaryDate));
     const sales = dayOrders.reduce((sum, o) => sum + o.total, 0);
-    totalSales += sales; totalOrders += dayOrders.length;
+    // Cash advances are deducted from the day's sales — same rule as the
+    // cashier's own Shift Summary (renderSummary()). Without this, the
+    // owner's total looked higher than what was actually collected, since
+    // cash handed out as an advance was never subtracted here.
+    const dayCashAdv = cashAdvances
+      .filter(a => a.datetime && a.datetime.startsWith(summaryDate))
+      .reduce((sum, a) => sum + (a.amount || 0), 0);
+    const netSales = Math.max(0, sales - dayCashAdv);
+    totalSales += sales; totalCashAdv += dayCashAdv; totalOrders += dayOrders.length;
     rows += `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:var(--orange);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;">${c.name.charAt(0).toUpperCase()}</div>
-          <div><div style="font-weight:700;">${escHtml(c.name)}</div><div style="font-size:0.78rem;color:var(--text3);">${dayOrders.length} orders</div></div>
+          <div><div style="font-weight:700;">${escHtml(c.name)}</div><div style="font-size:0.78rem;color:var(--text3);">${dayOrders.length} orders${dayCashAdv > 0 ? ` &middot; <span style="color:var(--red);">-₱${fmt(dayCashAdv)} advance</span>` : ''}</div></div>
         </div>
-        <strong style="color:var(--green);">₱${fmt(sales)}</strong>
+        <div style="text-align:right;">
+          <strong style="color:var(--green);">₱${fmt(netSales)}</strong>
+          ${dayCashAdv > 0 ? `<div style="font-size:0.7rem;color:var(--text3);">(₱${fmt(sales)} gross)</div>` : ''}
+        </div>
       </div>`;
   });
+  const totalNetSales = Math.max(0, totalSales - totalCashAdv);
   container.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
       <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:14px;text-align:center;">
-        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">TOTAL SALES</div>
-        <div style="font-size:1.4rem;font-weight:800;color:var(--green);">₱${fmt(totalSales)}</div>
+        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">NET SALES${totalCashAdv > 0 ? ' (AFTER ADVANCES)' : ''}</div>
+        <div style="font-size:1.4rem;font-weight:800;color:var(--green);">₱${fmt(totalNetSales)}</div>
+        ${totalCashAdv > 0 ? `<div style="font-size:0.72rem;color:var(--text3);margin-top:2px;">₱${fmt(totalSales)} gross &minus; ₱${fmt(totalCashAdv)} advances</div>` : ''}
       </div>
       <div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:12px;padding:14px;text-align:center;">
         <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">TOTAL ORDERS</div>
