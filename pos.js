@@ -3421,7 +3421,10 @@ function renderInventory() {
     dayShifts.forEach((s, i) => {
       const sOp = s.opening || {}, sCl = s.closing || {};
       const openAmt = (sOp.amounts || []).reduce((a, x) => a + (x.amount||0), 0);
-      const closeAmt = (sCl.amounts || []).reduce((a, x) => a + (x.closingAmount||0), 0);
+      const closeAmt = (sCl.amounts || []).reduce((a, x) => {
+        const hasActual = x.actualAmount !== null && x.actualAmount !== undefined && x.actualAmount !== '';
+        return a + (hasActual ? (parseFloat(x.actualAmount) || 0) : (parseFloat(x.closingAmount) || 0));
+      }, 0);
       const sOpIng = sOp.ingredients || [];
       const sClIng = sCl.ingredients || [];
       const hasCl = (sCl.ingredients && sCl.ingredients.length) || (sCl.amounts && sCl.amounts.length);
@@ -3478,8 +3481,20 @@ function renderInventory() {
   }
 
   // ── Summary cards for the selected shift ────────────────────────────────
+  // BUGFIX: "Cash Left" totals/displays were computed from `closingAmount`
+  // only, ignoring the cashier's "actual recount" entry. So if a cashier
+  // recorded a real shortage (e.g. opened with ₱1,000, actually counted only
+  // ₱950), the closing list still showed the un-adjusted ₱1,000 — and other
+  // cards downstream (Cash Used / Closing Cash / Discrepancy) disagreed with
+  // each other because some used actualAmount and some didn't. This helper
+  // is now the single source of truth: actual recount wins when present,
+  // otherwise fall back to the entered closing amount.
+  const effectiveCashAmt = a => {
+    const hasActual = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
+    return hasActual ? (parseFloat(a.actualAmount) || 0) : (parseFloat(a.closingAmount) || 0);
+  };
   const openAmtTotal  = openAmounts.reduce((s, a) => s + (a.amount||0), 0);
-  const closeAmtTotal = closeAmounts.length ? closeAmounts.reduce((s, a) => s + (a.closingAmount||0), 0) : null;
+  const closeAmtTotal = closeAmounts.length ? closeAmounts.reduce((s, a) => s + effectiveCashAmt(a), 0) : null;
   const usedAmt = closeAmtTotal !== null ? Math.max(0, openAmtTotal - closeAmtTotal) : null;
 
   document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
@@ -3567,11 +3582,20 @@ function renderInventory() {
     }
     if (closeAmounts.length) {
       closeHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;">💵 Cash Left</div>`;
-      closeHTML += closeAmounts.map(a => `
+      closeHTML += closeAmounts.map(a => {
+        const hasActualAmt = a.actualAmount !== null && a.actualAmount !== undefined && a.actualAmount !== '';
+        const effectiveAmt = effectiveCashAmt(a);
+        const shortAmt = hasActualAmt ? ((parseFloat(a.closingAmount) || 0) - effectiveAmt) : 0;
+        return `
         <div class="inv-list-item">
-          <div><span style="font-weight:700;">${escHtml(a.name)}</span>${a.notes ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(a.notes)}</span>` : ''}</div>
-          <span style="font-weight:800;color:var(--green);">₱${fmt(a.closingAmount||0)}</span>
-        </div>`).join('');
+          <div>
+            <span style="font-weight:700;">${escHtml(a.name)}</span>${a.notes ? `<span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${escHtml(a.notes)}</span>` : ''}
+            ${hasActualAmt && shortAmt > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">(₱${fmt(shortAmt)} short — actual count used)</span>` : ''}
+            ${hasActualAmt && shortAmt < 0 ? `<span style="font-size:0.72rem;color:var(--orange);margin-left:6px;">(₱${fmt(Math.abs(shortAmt))} over — actual count used)</span>` : ''}
+          </div>
+          <span style="font-weight:800;color:${hasActualAmt && shortAmt !== 0 ? 'var(--orange)' : 'var(--green)'};">₱${fmt(effectiveAmt)}</span>
+        </div>`;
+      }).join('');
       closeHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH LEFT</span><span style="color:var(--green);">₱${fmt(closeAmtTotal||0)}</span></div>`;
     }
     if (isToday && viewIdx === shiftCount - 1) {
