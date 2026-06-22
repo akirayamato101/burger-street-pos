@@ -460,7 +460,10 @@ function renderMenuGrid() {
     // Stock that would remain if we exclude what THIS product already has in
     // cart (so its own "can I add one more" check doesn't double-subtract).
     const netStock = getStockMapMinusCart(baseStock, p.id);
-    const addableMore = getMaxAddable(p, netStock);
+    // addableMore = TOTAL capacity from net stock, minus what's already in
+    // the cart for this product (see getRemainingAddable for why this
+    // subtraction is required — without it the limit never engages).
+    const addableMore = getMaxAddable(p, netStock) - qty;
     const outOfStock = addableMore <= 0; // can't add even one more unit
     const soldOutEntirely = outOfStock && !inCart; // never had any in cart either
 
@@ -581,7 +584,8 @@ function refreshStockLimits() {
     const inCart = !!cartItem && cartItem.qty > 0;
 
     const netStock = getStockMapMinusCart(baseStock, p.id);
-    const addableMore = getMaxAddable(p, netStock);
+    const currentQty = inCart ? cartItem.qty : 0;
+    const addableMore = getMaxAddable(p, netStock) - currentQty;
     const outOfStock = addableMore <= 0;
     const soldOutEntirely = outOfStock && !inCart;
 
@@ -891,6 +895,62 @@ function clearOrder() {
   updateChange();
 }
 
+// Reconciles ingredient usedQty when a PAID order's items are edited
+// (qty changed, item added, or item removed) after the original
+// autoDeductIngredients() deduction already ran. Computes the net
+// ingredient delta between the original and edited item lists and applies
+// only that difference — giving back ingredients for removed/reduced
+// quantities, and deducting extra for added/increased quantities.
+function adjustIngredientsForOrderEdit(originalItems, newItems) {
+  try {
+    const dateKey = getLocalDateKey();
+    const data = loadInventoryData();
+    if (!data[dateKey]) return;
+    const activeShift = getActiveShift(dateKey, data);
+    if (!activeShift || !activeShift.opening || !activeShift.opening.ingredients || !activeShift.opening.ingredients.length) return;
+
+    const openingIngs = activeShift.opening.ingredients;
+    openingIngs.forEach(ing => { if (ing.usedQty === undefined) ing.usedQty = 0; });
+
+    // Net delta per ingredient: positive = needs MORE deducted, negative = give some back.
+    const delta = {};
+    const addNeeded = (items, sign) => {
+      items.forEach(item => {
+        const product = (posState.customProducts || []).find(p => p.id == item.id);
+        if (!product || !product.recipe || !product.recipe.length) return;
+        product.recipe.forEach(r => {
+          const key = (r.ingredient || '').trim().toLowerCase();
+          if (!key) return;
+          delta[key] = (delta[key] || 0) + sign * (r.qty || 1) * item.qty;
+        });
+      });
+    };
+    addNeeded(newItems, +1);
+    addNeeded(originalItems, -1);
+
+    let changed = false;
+    Object.keys(delta).forEach(key => {
+      if (!delta[key]) return;
+      const ing = openingIngs.find(i => (i.name || '').trim().toLowerCase() === key);
+      if (!ing) return;
+      if (delta[key] > 0) {
+        // Need to deduct more — cap at what's actually available so usedQty
+        // never exceeds opening qty (matches autoDeductIngredients' safety cap).
+        const available = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
+        ing.usedQty = (ing.usedQty || 0) + Math.min(delta[key], available);
+      } else {
+        // Give ingredients back, never going below 0 used.
+        ing.usedQty = Math.max(0, (ing.usedQty || 0) + delta[key]);
+      }
+      changed = true;
+    });
+
+    if (changed) saveInventoryData(data);
+  } catch(e) {
+    console.warn('adjustIngredientsForOrderEdit error:', e);
+  }
+}
+
 // =================== AUTO-DEDUCT INVENTORY ===================
 function autoDeductIngredients(soldItems) {
   try {
@@ -905,7 +965,7 @@ function autoDeductIngredients(soldItems) {
 
     let changed = false;
     soldItems.forEach(item => {
-      const product = (posState.customProducts || []).find(p => p.id === item.id);
+      const product = (posState.customProducts || []).find(p => p.id == item.id);
       if (!product || !product.recipe || !product.recipe.length) return;
       product.recipe.forEach(recipeItem => {
         const totalDeduct = recipeItem.qty * item.qty;
@@ -1005,10 +1065,25 @@ function getStockMapMinusCart(stockMap, excludeProductId = null) {
 
 // How many more of `product` can still be added, accounting for everything
 // else already in the cart (including other units of the same product).
+//
+// BUGFIX: getMaxAddable(product, netStock) returns the TOTAL number of this
+// product that current stock could ever produce (after removing this
+// product's own cart usage from the stock map) — it does NOT know how many
+// are already sitting in the cart. Previously this function returned that
+// total directly, so e.g. with stock for exactly 3 burgers, the result was
+// always "3 addable" no matter whether the cart already had 0, 3, or 10 —
+// the +button and out-of-stock badge never actually limited anything, and
+// cashiers could keep adding well past real stock until the final
+// checkout-time validation blocked the whole order. The fix: subtract the
+// quantity already in the cart for THIS product from the total capacity.
 function getRemainingAddable(product) {
   const baseStock = getIngredientStockMap();
   const netStock = getStockMapMinusCart(baseStock, product.id);
-  return getMaxAddable(product, netStock);
+  const totalCapacity = getMaxAddable(product, netStock);
+  if (totalCapacity === Infinity) return Infinity;
+  const cartItem = cart.find(i => i.id == product.id);
+  const currentQty = cartItem ? cartItem.qty : 0;
+  return totalCapacity - currentQty;
 }
 
 function confirmClearOrder() {
@@ -2541,6 +2616,17 @@ function saveOrderEdits() {
     showToast('Order must have at least one item.', 'error');
     return;
   }
+
+  // BUGFIX: editing a paid order's quantities (or removing/adding items)
+  // previously never touched ingredient inventory — autoDeductIngredients()
+  // only runs once, at the moment of the original payment. So increasing an
+  // item's qty here sold MORE food without ever deducting the extra
+  // ingredients, and decreasing/removing an item never gave the unused
+  // ingredients back. Over time this silently desyncs "remaining stock" from
+  // what was actually used. Fix: re-deduct based on the difference between
+  // the order's original items and the edited items.
+  const originalItems = posState.orders[orderIdx].items || [];
+  adjustIngredientsForOrderEdit(originalItems, editingOrderItems);
 
   const subtotal = editingOrderItems.reduce((s, i) => s + i.price * i.qty, 0);
   posState.orders[orderIdx].items = editingOrderItems;
