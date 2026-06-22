@@ -3382,7 +3382,7 @@ function renderInventory() {
     } else {
       let hcols = '<th>Ingredient/Supply</th>';
       dayShifts.forEach((_, si) => {
-        hcols += `<th style="color:var(--orange);">S${si+1} Open</th><th style="color:var(--green);">S${si+1} Close</th><th style="color:var(--red);">S${si+1} Used</th>`;
+        hcols += `<th style="color:var(--orange);">S${si+1} Open</th><th style="color:var(--green);">S${si+1} Close</th><th style="color:var(--orange);font-weight:700;">S${si+1} Actual</th><th style="color:var(--red);">S${si+1} Short</th><th style="color:var(--red);">S${si+1} Used</th>`;
       });
       hcols += '<th style="color:var(--red);font-weight:800;">Total Used</th><th>Status</th>';
       thead.innerHTML = hcols;
@@ -3436,8 +3436,14 @@ function renderInventory() {
           unit = opI?.unit || clI?.unit || unit;
           totalUsed += usedQty;
           lastEndQty = endQty;
+          const hasActualI = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
+          const actualQtyI = hasActualI ? clI.actualQty : null;
+          const shortQtyI  = (hasActualI && endQty !== null) ? Math.max(0, endQty - actualQtyI) : null;
+          if (shortQtyI !== null && shortQtyI > 0) totalShorts++;
           cols += `<td style="color:var(--orange);">${opI ? startQty : '—'}</td>`;
           cols += `<td style="color:var(--green);">${clI ? (endQty ?? '—') : '—'}</td>`;
+          cols += `<td style="color:var(--orange);font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
+          cols += `<td style="color:${shortQtyI>0?'var(--red)':'var(--text3);'}font-weight:${shortQtyI>0?'800':'400'};">${shortQtyI !== null ? (shortQtyI > 0 ? '-'+shortQtyI : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>`;
         });
         const statusTag = lastEndQty === 0 ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
@@ -3496,8 +3502,14 @@ function renderInventory() {
           const endAmt   = clA ? (clA.closingAmount ?? 0) : null;
           const usedAmt2 = (opA && clA && endAmt !== null) ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
+          const hasActualA = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
+          const actualAmtA = hasActualA ? parseFloat(clA.actualAmount) : null;
+          const shortAmtA  = (hasActualA && endAmt !== null) ? Math.max(0, endAmt - actualAmtA) : null;
+          if (shortAmtA !== null && shortAmtA > 0) totalShorts++;
           cols += `<td style="color:var(--blue);">${opA ? '₱'+fmt(startAmt) : '—'}</td>`;
           cols += `<td style="color:var(--green);">${clA ? '₱'+fmt(endAmt) : '—'}</td>`;
+          cols += `<td style="color:var(--orange);font-weight:700;">${hasActualA ? '₱'+fmt(actualAmtA) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
+          cols += `<td style="color:${shortAmtA>0?'var(--red)':'var(--text3)'};font-weight:${shortAmtA>0?'800':'400'};">${shortAmtA !== null ? (shortAmtA > 0 ? '-₱'+fmt(shortAmtA) : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${usedAmt2>0?'var(--red)':'var(--text3)'};">${usedAmt2>0?'-₱'+fmt(usedAmt2):'—'}</td>`;
         });
         cols += `<td style="color:var(--red);font-weight:800;">${totalUsedAmt>0?'-₱'+fmt(totalUsedAmt):'—'}</td>`;
