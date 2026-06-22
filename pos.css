@@ -456,13 +456,7 @@
     }
 
     /* ========== PAGE CONTENT ========== */
-    .page-content {
-      flex: 1;
-      overflow-y: auto;
-      overflow-x: hidden;
-      min-height: 0;
-      position: relative;
-    }
+    
 
     .page { display: none; }
     .page.active { display: block; padding: 24px 24px calc(24px + env(safe-area-inset-bottom, 0px)); }
