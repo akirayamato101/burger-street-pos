@@ -1677,7 +1677,14 @@ function saveDelivery() {
     unit,
     supplier: supplier || '—',
     datetime: dt || new Date().toISOString(),
-    recordedBy: posState.settings.cashierName || CASHIER_NAME
+    recordedBy: posState.settings.cashierName || CASHIER_NAME,
+    // dateKey/shiftIndex record exactly which inventory shift this delivery was
+    // folded into. The report uses these (not just the mutated opening qty) to
+    // know how much of "Total Used" is delivered stock vs. true consumption —
+    // without this, a delivery logged after a shift closes has no reliable way
+    // to be matched back to the shift it belongs to.
+    dateKey: null,
+    shiftIndex: null
   };
 
   // Save to shared delivery log (visible to all cashiers)
@@ -1700,7 +1707,8 @@ function saveDelivery() {
     }
 
     // Add to the active (last) shift's opening ingredients
-    const activeShift = invData[dateKey].shifts[invData[dateKey].shifts.length - 1];
+    const activeShiftIdx = invData[dateKey].shifts.length - 1;
+    const activeShift = invData[dateKey].shifts[activeShiftIdx];
     if (!activeShift.opening) activeShift.opening = { ingredients: [], amounts: [] };
     if (!activeShift.opening.ingredients) activeShift.opening.ingredients = [];
     const ings = activeShift.opening.ingredients;
@@ -1713,6 +1721,13 @@ function saveDelivery() {
       ings.push({ name: item, unit: unit, qty: qtyNum });
     }
     saveInventoryData(invData);
+
+    // Record exactly where this delivery landed so the report can pull it back
+    // out of "Used" later, even if this shift has since closed.
+    delivery.dateKey = dateKey;
+    delivery.shiftIndex = activeShiftIdx;
+    saveSharedDeliveries(sharedDeliveries);
+
     renderInventory();
   }
 
@@ -3391,6 +3406,19 @@ function renderInventory() {
     let rows = '';
     let totalShorts = 0;
 
+    // Map deliveries (tagged with dateKey + shiftIndex at save time) to the
+    // shift/ingredient they actually belong to. This lets Total Used subtract
+    // delivered stock explicitly instead of leaving it folded into Opening —
+    // which previously meant a delivery logged after its shift had already
+    // closed never made it into that shift's Used calculation at all.
+    const allDeliveries = loadSharedDeliveries();
+    function deliveredQtyFor(itemName, shiftIdx) {
+      return allDeliveries
+        .filter(d => d.dateKey === dateKey && d.shiftIndex === shiftIdx
+          && d.item && d.item.trim().toLowerCase() === itemName.trim().toLowerCase())
+        .reduce((sum, d) => sum + (d.qtyNum || 0), 0);
+    }
+
     // Ingredient rows
     allIngNames.forEach(name => {
       let totalUsed = 0;
@@ -3404,7 +3432,12 @@ function renderInventory() {
         const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
         const startQty = opI ? (opI.qty||0) : 0;
         const endQty   = clI ? (clI.closingQty ?? 0) : null;
-        const usedQty  = endQty !== null ? Math.max(0, startQty - endQty) : null;
+        // If this shift is already closed, any delivery tagged to it landed in
+        // opening.qty AFTER closingQty was already locked in by the cashier —
+        // so that delivered amount was never actually available to be "used."
+        // Subtract it out, or Total Used balloons by the full delivered qty.
+        const deliveredQty = (s.closing ? deliveredQtyFor(name, 0) : 0);
+        const usedQty  = endQty !== null ? Math.max(0, (startQty - deliveredQty) - endQty) : null;
         unit = opI?.unit || clI?.unit || 'pcs';
         const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
         const actualQty = hasActual ? clI.actualQty : null;
@@ -3412,14 +3445,16 @@ function renderInventory() {
         const vColor = variance === null ? '' : variance === 0 ? 'var(--green)' : 'var(--red)';
         const vLabel = variance === null ? '—' : variance === 0 ? '✓ Match' : (variance > 0 ? `+${variance} over` : `${variance} short`);
         if (variance !== null && variance !== 0) anyVariance = true;
-        if (hasActual && actualQty < endQty) totalShorts++;
-        let status = anyVariance ? `<span class="inv-status-tag inv-tag-low">⚠️ Variance</span>`
-          : endQty === 0 && startQty > 0 ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
-          : endQty < startQty * 0.2 && startQty > 0 ? `<span class="inv-status-tag inv-tag-low">⚡ Low</span>`
+        // Status rule: Short shows the exact short count (actual physical count vs
+        // the expected closing qty); Empty when nothing is left; OK otherwise.
+        const shortAmount = (hasActual && actualQty < endQty) ? (endQty - actualQty) : 0;
+        if (shortAmount > 0) totalShorts++;
+        let status = shortAmount > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ${shortAmount} ${escHtml(unit)}</span>`
+          : (endQty === 0 || (hasActual && actualQty === 0)) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
           : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
         rows += `<tr>
           <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
-          <td style="color:var(--orange);">${startQty} ${escHtml(unit)}</td>
+          <td style="color:var(--orange);">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}</td>
           <td style="color:var(--green);">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty !== null ? (usedQty > 0 ? '-'+usedQty : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:var(--orange);font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
@@ -3427,33 +3462,44 @@ function renderInventory() {
           <td>${status}</td></tr>`;
       } else {
         let cols = `<td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>`;
-        dayShifts.forEach(s => {
+        let totalShortQty = 0;
+        let everHadStock = false;
+        dayShifts.forEach((s, si) => {
           const opI = (s.opening?.ingredients||[]).find(i => i.name === name);
           const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
           const startQty = opI ? (opI.qty||0) : 0;
           const endQty   = clI ? (clI.closingQty ?? 0) : (opI ? null : null);
-          const usedQty  = (endQty !== null) ? Math.max(0, startQty - endQty) : 0;
+          // Exclude deliveries that arrived after this shift's closing was already
+          // recorded — they landed in opening.qty too late to be reflected in
+          // closingQty, so counting them as "used" overstates consumption.
+          const deliveredQty = (s.closing ? deliveredQtyFor(name, si) : 0);
+          const usedQty  = (endQty !== null) ? Math.max(0, (startQty - deliveredQty) - endQty) : 0;
           unit = opI?.unit || clI?.unit || unit;
           totalUsed += usedQty;
           lastEndQty = endQty;
+          if (opI && startQty > 0) everHadStock = true;
           const hasActualI = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
           const actualQtyI = hasActualI ? clI.actualQty : null;
           const shortQtyI  = (hasActualI && endQty !== null) ? Math.max(0, endQty - actualQtyI) : null;
-          if (shortQtyI !== null && shortQtyI > 0) totalShorts++;
-          cols += `<td style="color:var(--orange);">${opI ? startQty : '—'}</td>`;
+          if (shortQtyI !== null && shortQtyI > 0) { totalShorts++; totalShortQty += shortQtyI; }
+          cols += `<td style="color:var(--orange);">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}</td>`;
           cols += `<td style="color:var(--green);">${clI ? (endQty ?? '—') : '—'}</td>`;
           cols += `<td style="color:var(--orange);font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${shortQtyI>0?'var(--red)':'var(--text3);'}font-weight:${shortQtyI>0?'800':'400'};">${shortQtyI !== null ? (shortQtyI > 0 ? '-'+shortQtyI : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>`;
         });
-        const statusTag = lastEndQty === 0 ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
-          : totalUsed === 0 ? `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`
+        // Status rule: Short shows the exact total short count across shifts
+        // (actual physical count vs expected closing, summed); Empty when the
+        // last shift ended with nothing left; OK otherwise.
+        const statusTag = totalShortQty > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ${totalShortQty} ${escHtml(unit)}</span>`
+          : (lastEndQty === 0 && everHadStock) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
           : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
         cols += `<td style="color:var(--red);font-weight:800;">${totalUsed > 0 ? '-'+totalUsed+' '+escHtml(unit) : '—'}</td>`;
         cols += `<td>${statusTag}</td>`;
         rows += `<tr>${cols}</tr>`;
       }
     });
+
 
     // Amount rows
     allAmtNames.forEach(name => {
