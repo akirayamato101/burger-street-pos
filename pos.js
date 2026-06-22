@@ -3764,6 +3764,33 @@ function printInventoryReport() {
   }, 50);
 }
 
+// jsPDF's built-in fonts (Helvetica/Times/Courier) have no emoji glyphs at
+// all, so any emoji passed to doc.text()/autoTable() renders as garbage bytes
+// (e.g. "&¡", "&þ") instead of being skipped. The print/on-screen views are
+// real browser HTML and render emoji fine — this sanitizer is PDF-only, so it
+// doesn't touch the print or live report.
+function pdfSafeText(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/⚠️|⚠/g, '[!]')
+    .replace(/⚡/g, '[LOW]')
+    .replace(/✓\s*/g, '')
+    .replace(/✅/g, '[OK]')
+    .replace(/🕐/g, '')
+    .replace(/₱/g, 'PHP ')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\uFE0F]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function pdfSafeTable(t) {
+  return {
+    title: t.title ? pdfSafeText(t.title) : null,
+    head: t.head.map(pdfSafeText),
+    rows: t.rows.map(r => r.map(pdfSafeText))
+  };
+}
+
 // Generates a clean, shareable PDF of the Daily Inventory Report using
 // jsPDF + autotable. Falls back to the Print dialog (Save as PDF) if the
 // jsPDF library failed to load (e.g. no internet on first run before the
@@ -3782,8 +3809,10 @@ function downloadInventoryReportPDF() {
   }
 
   const { dateKey, dateLabel, cashierName } = getInventoryReportHeaderInfo();
-  const shortsCount = document.getElementById('invShortsCount')?.textContent || '—';
+  const shortsCount = pdfSafeText(document.getElementById('invShortsCount')?.textContent || '—');
   const { shiftTables, summaryTable } = getInventoryReportTablesGrouped();
+  const safeShiftTables = shiftTables.map(pdfSafeTable);
+  const safeSummaryTable = summaryTable ? pdfSafeTable(summaryTable) : null;
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
@@ -3807,7 +3836,7 @@ function downloadInventoryReportPDF() {
   // stacked vertically — never wider than 6 columns, so it stays readable no
   // matter how many shifts the day had. autoTable auto-breaks across pages.
   let y = 104;
-  const allTables = summaryTable ? [...shiftTables, summaryTable] : shiftTables;
+  const allTables = safeSummaryTable ? [...safeShiftTables, safeSummaryTable] : safeShiftTables;
   allTables.forEach((t, idx) => {
     if (t.title) {
       if (y > pageHeight - 80) { doc.addPage(); y = 40; }
@@ -3832,8 +3861,7 @@ function downloadInventoryReportPDF() {
 
   // Cash balance summary, plain text below the tables
   if (y > pageHeight - 100) { doc.addPage(); y = 40; }
-  const balanceText = document.getElementById('invBalanceCheck')?.textContent
-    .replace(/\s+/g, ' ').trim() || '';
+  const balanceText = pdfSafeText(document.getElementById('invBalanceCheck')?.textContent || '');
   doc.setFontSize(11);
   doc.setFont(undefined, 'bold');
   doc.text('Cash Balance Summary', 24, y);
