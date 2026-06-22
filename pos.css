@@ -457,6 +457,8 @@
 
     /* ========== PAGE CONTENT ========== */
     .page-content {
+      flex: 1;
+
       min-height: 0;
       
     }
