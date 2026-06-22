@@ -1531,6 +1531,16 @@ function openDeliveryModal() {
   document.getElementById('deliveryQtyNum').value = '';
   document.getElementById('deliveryUnit').value = 'pcs';
   document.getElementById('deliverySupplier').value = '';
+
+  // Populate the ingredient name suggestions from the master template
+  const tpl = loadIngredientTemplate();
+  const datalist = document.getElementById('deliveryItemSuggestions');
+  if (datalist) {
+    datalist.innerHTML = (tpl.ingredients || [])
+      .map(i => `<option value="${escHtml(i.name)}"></option>`)
+      .join('');
+  }
+
   const modal = document.getElementById('deliveryModal');
   modal.style.display = 'flex';
 }
