@@ -3638,9 +3638,142 @@ const printStyle = `
     #receiptModal .modal-box { box-shadow: none !important; border: none !important; max-width: 100% !important; }
     #receiptModal .modal-header, #receiptModal .modal-footer { display: none !important; }
     .receipt-biz-name { color: #000 !important; }
+    #invReportPrintArea { display: block !important; position: static !important; background: #fff !important; }
     * { color: #000 !important; background: #fff !important; }
   }
 `;
 const styleEl = document.createElement('style');
 styleEl.textContent = printStyle;
 document.head.appendChild(styleEl);
+
+// =================== DAILY INVENTORY REPORT — PRINT / PDF ===================
+// Both functions read the already-rendered #invReportTable and #invBalanceCheck
+// directly from the DOM, so the printed/exported report always matches exactly
+// what the cashier sees on screen (same Total Used / Status fixes already applied
+// by renderInventory()) instead of duplicating that calculation logic separately.
+
+function getInventoryReportHeaderInfo() {
+  const dateKey = getTodayInvKey();
+  const dateLabel = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-PH', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
+  const cashierName = activeCashier?.name || BIZ_NAME;
+  return { dateKey, dateLabel, cashierName };
+}
+
+// Builds a temporary, print-friendly DOM node containing the report table(s)
+// and balance check, cloned from the live page so we don't disturb the
+// on-screen UI. Used by both print and PDF paths.
+function buildInventoryReportPrintArea() {
+  const reportSection = document.getElementById('invReportSection');
+  if (!reportSection || reportSection.style.display === 'none') {
+    showToast('No inventory report available to export yet. Set an opening and closing inventory first.', 'error');
+    return null;
+  }
+
+  const { dateLabel, cashierName } = getInventoryReportHeaderInfo();
+  const tableClone = document.getElementById('invReportTable').cloneNode(true);
+  const balanceClone = document.getElementById('invBalanceCheck').cloneNode(true);
+  const shortsCount = document.getElementById('invShortsCount')?.textContent || '—';
+
+  const wrap = document.createElement('div');
+  wrap.id = 'invReportPrintArea';
+  wrap.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#fff;color:#000;padding:24px;z-index:99999;display:none;font-family:Arial,Helvetica,sans-serif;';
+  wrap.innerHTML = `
+    <div style="text-align:center;margin-bottom:18px;">
+      <div style="font-size:1.4rem;font-weight:800;">${escHtml(BIZ_NAME)}</div>
+      <div style="font-size:1.05rem;font-weight:700;margin-top:4px;">Daily Inventory Report</div>
+      <div style="font-size:0.9rem;color:#444;margin-top:2px;">${escHtml(dateLabel)}</div>
+      <div style="font-size:0.82rem;color:#666;">Prepared by: ${escHtml(cashierName)} &nbsp;|&nbsp; Shorts found: ${escHtml(shortsCount)}</div>
+    </div>
+  `;
+  wrap.appendChild(tableClone);
+  const balanceWrap = document.createElement('div');
+  balanceWrap.style.marginTop = '18px';
+  balanceWrap.appendChild(balanceClone);
+  wrap.appendChild(balanceWrap);
+  document.body.appendChild(wrap);
+  return wrap;
+}
+
+function printInventoryReport() {
+  const area = buildInventoryReportPrintArea();
+  if (!area) return;
+  area.style.display = 'block';
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => area.remove(), 500);
+  }, 50);
+}
+
+// Generates a clean, shareable PDF of the Daily Inventory Report using
+// jsPDF + autotable. Falls back to the Print dialog (Save as PDF) if the
+// jsPDF library failed to load (e.g. no internet on first run before the
+// service worker has cached it).
+function downloadInventoryReportPDF() {
+  if (typeof window.jspdf === 'undefined') {
+    showToast('PDF library not loaded yet — using Print instead. Choose "Save as PDF" in the print dialog.', '');
+    printInventoryReport();
+    return;
+  }
+
+  const reportSection = document.getElementById('invReportSection');
+  if (!reportSection || reportSection.style.display === 'none') {
+    showToast('No inventory report available to export yet. Set an opening and closing inventory first.', 'error');
+    return;
+  }
+
+  const { dateKey, dateLabel, cashierName } = getInventoryReportHeaderInfo();
+  const shortsCount = document.getElementById('invShortsCount')?.textContent || '—';
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // Header
+  doc.setFontSize(16);
+  doc.setFont(undefined, 'bold');
+  doc.text(BIZ_NAME, pageWidth / 2, 36, { align: 'center' });
+  doc.setFontSize(12);
+  doc.text('Daily Inventory Report', pageWidth / 2, 54, { align: 'center' });
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(80);
+  doc.text(dateLabel, pageWidth / 2, 70, { align: 'center' });
+  doc.text(`Prepared by: ${cashierName}   |   Shorts found: ${shortsCount}`, pageWidth / 2, 84, { align: 'center' });
+  doc.setTextColor(0);
+
+  // Pull rows/headers straight from the rendered table so the PDF matches
+  // exactly what's on screen, plain-text only (strip emoji/HTML formatting).
+  const table = document.getElementById('invReportTable');
+  const headerCells = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+  const bodyRows = [...table.querySelectorAll('tbody tr')].map(tr =>
+    [...tr.querySelectorAll('td')].map(td => td.textContent.replace(/\s+/g, ' ').trim())
+  );
+
+  doc.autoTable({
+    head: [headerCells],
+    body: bodyRows,
+    startY: 98,
+    styles: { fontSize: 8, cellPadding: 4 },
+    headStyles: { fillColor: [232, 124, 30], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 248, 248] },
+    margin: { left: 24, right: 24 }
+  });
+
+  // Cash balance summary, plain text below the table
+  let y = doc.lastAutoTable.finalY + 24;
+  const balanceText = document.getElementById('invBalanceCheck')?.textContent
+    .replace(/\s+/g, ' ').trim() || '';
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  doc.text('Cash Balance Summary', 24, y);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  const wrapped = doc.splitTextToSize(balanceText, pageWidth - 48);
+  doc.text(wrapped, 24, y + 16);
+
+  const fileName = `Inventory_Report_${dateKey}.pdf`;
+  doc.save(fileName);
+  showToast('✅ PDF saved — ready to share with the owner!', 'success');
+}

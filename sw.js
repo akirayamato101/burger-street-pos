@@ -3,7 +3,7 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v4';
+const CACHE_NAME = 'burger-pos-v5';
 
 const ASSETS_TO_CACHE = [
   '/',
@@ -12,7 +12,11 @@ const ASSETS_TO_CACHE = [
   '/pos.js',
   '/manifest.json',
   // Dexie.js from CDN — cache it so app works fully offline
-  'https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js',
+  // jsPDF + autotable — used to export the Daily Inventory Report as a PDF;
+  // cached so the export still works with no internet connection.
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'
 ];
 
 // Install: cache all assets

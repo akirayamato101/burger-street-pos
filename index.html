@@ -480,7 +480,13 @@
 
         <!-- Comparison Report -->
         <div class="dash-section" id="invReportSection" style="display:none;">
-          <h4 class="section-title" style="margin-bottom:16px;">📊 Daily Inventory Report</h4>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+            <h4 class="section-title" style="margin-bottom:0;">📊 Daily Inventory Report</h4>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-outline btn-sm" onclick="printInventoryReport()">🖨️ Print</button>
+              <button class="btn btn-primary btn-sm" onclick="downloadInventoryReportPDF()">📄 Save as PDF</button>
+            </div>
+          </div>
           <div class="table-wrap">
             <table class="data-table" id="invReportTable">
               <thead>
@@ -951,7 +957,11 @@
 <!-- TOAST -->
 <div id="toast" class="toast hidden"></div>
 
-<script src="pos.js?v=6"></script>
+<!-- jsPDF + autotable: used to generate a clean, shareable PDF of the Daily Inventory Report -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+<script src="pos.js?v=7"></script>
 
 
 <script>
