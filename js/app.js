@@ -174,6 +174,7 @@ async function buildMenuGrid() {
   allProducts = await dbGetProducts();
   // Map productId back to id field for compatibility
   allProducts = allProducts.map(p => ({ ...p, id: p.productId }));
+  await loadStockMapCache(); // populate ingredient stock before rendering
   buildCategoryTabs();
   renderMenuGrid();
 }
@@ -214,13 +215,23 @@ function renderMenuGrid() {
     return;
   }
 
+  const baseStock = getIngredientStockMap();
+
   grid.innerHTML = products.map(p => {
     const cartItem = cart.find(i => i.id == p.productId);
     const qty = cartItem ? cartItem.qty : 0;
     const inCart = qty > 0;
+
+    // Net stock excluding what's already in cart for this product
+    const netStock = getStockMapMinusCart(baseStock, p.productId);
+    const addableMore = getMaxAddable(p, netStock);
+    const outOfStock = addableMore <= 0;
+    const soldOutEntirely = outOfStock && !inCart;
+
     return `
-    <div class="menu-item ${inCart ? 'in-cart' : ''}" id="mc_${p.productId}">
-      <div class="menu-item-tap" onclick="menuCardQty('${p.productId}', 1)">
+    <div class="menu-item ${inCart ? 'in-cart' : ''} ${soldOutEntirely ? 'out-of-stock' : ''}" id="mc_${p.productId}">
+      ${soldOutEntirely ? '<span class="menu-item-soldout-badge">Out of Stock</span>' : ''}
+      <div class="menu-item-tap" onclick="${soldOutEntirely ? '' : `menuCardQty('${p.productId}', 1)`}">
         <span class="menu-item-name">${escHtml(p.name)}</span>
         <span class="menu-item-price">₱${fmt(p.price)}</span>
         <span class="menu-item-cat">${escHtml(p.category || '')}</span>
@@ -228,16 +239,127 @@ function renderMenuGrid() {
       <div class="menu-item-qty-row">
         <button class="miq-btn miq-minus ${inCart ? '' : 'miq-zero'}" onclick="menuCardQty('${p.productId}', -1)">−</button>
         <span class="miq-count ${inCart ? 'miq-active' : ''}" id="miq_${p.productId}">${qty}</span>
-        <button class="miq-btn miq-plus" onclick="menuCardQty('${p.productId}', 1)">+</button>
+        <button class="miq-btn miq-plus ${outOfStock ? 'miq-disabled' : ''}" onclick="menuCardQty('${p.productId}', 1)">+</button>
       </div>
     </div>
   `}).join('');
+}
+
+// =================== STOCK LIMIT CHECKS (NEW ORDER PAGE) ===================
+// Returns a map of { ingredientNameLower: remainingQty } from the async cache.
+// Call loadStockMapCache() before rendering to populate it.
+function getIngredientStockMap() {
+  return window._stockMapCache || {};
+}
+
+// Async: loads today's opening inventory into _stockMapCache then re-renders the grid.
+async function loadStockMapCache() {
+  try {
+    const dateKey = new Date().toISOString().split('T')[0];
+    const dayInv = await dbGetInventory(dateKey) || {};
+    const openIngs = dayInv.opening?.ingredients || [];
+    const map = {};
+    openIngs.forEach(ing => {
+      const key = (ing.name || '').trim().toLowerCase();
+      if (!key) return;
+      map[key] = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
+    });
+    window._stockMapCache = map;
+  } catch(e) { window._stockMapCache = {}; }
+}
+
+// How many more units of a product can be added given remaining stock.
+// Products with no linked recipe return 0 (cannot be sold — no inventory configured).
+// Any recipe ingredient at zero/missing stock blocks the product entirely.
+function getMaxAddable(product, stockMap) {
+  if (!product) return 0;
+  if (!product.recipe || !product.recipe.length) return 0;
+
+  let max = Infinity;
+  product.recipe.forEach(recipeItem => {
+    const key = (recipeItem.ingredient || '').trim().toLowerCase();
+    const remaining = Object.prototype.hasOwnProperty.call(stockMap, key) ? stockMap[key] : 0;
+    const perUnit = recipeItem.qty || 1;
+    const possible = perUnit > 0 ? Math.floor(remaining / perUnit) : Infinity;
+    if (possible < max) max = possible;
+  });
+  // If no recipe items iterated (shouldn't happen but guard), treat as 0
+  return max === Infinity ? 0 : max;
+}
+
+// Net stock map after subtracting everything currently in the cart,
+// optionally excluding one product (so its own add check doesn't double-subtract).
+function getStockMapMinusCart(stockMap, excludeProductId = null) {
+  const map = { ...(stockMap || {}) };
+  cart.forEach(item => {
+    if (excludeProductId !== null && item.id == excludeProductId) return;
+    const product = (allProducts || []).find(p => p.productId == item.id);
+    if (!product || !product.recipe || !product.recipe.length) return;
+    product.recipe.forEach(recipeItem => {
+      const key = (recipeItem.ingredient || '').trim().toLowerCase();
+      if (!Object.prototype.hasOwnProperty.call(map, key)) map[key] = 0;
+      map[key] = Math.max(0, map[key] - (recipeItem.qty || 1) * item.qty);
+    });
+  });
+  return map;
+}
+
+// How many more of a product can still be added, accounting for the current cart
+function getRemainingAddable(product) {
+  const baseStock = getIngredientStockMap();
+  const netStock = getStockMapMinusCart(baseStock, product.productId || product.id);
+  return getMaxAddable(product, netStock);
+}
+
+// Re-check every visible menu card and update plus button / Out of Stock badge.
+// Called after every cart change so shared ingredients propagate correctly.
+function refreshStockLimits() {
+  const baseStock = getIngredientStockMap();
+  document.querySelectorAll('.menu-item').forEach(card => {
+    const pid = card.id.replace('mc_', '');
+    const p = allProducts.find(x => x.productId == pid);
+    if (!p) return;
+
+    const cartItem = cart.find(i => i.id == p.productId);
+    const inCart = !!cartItem && cartItem.qty > 0;
+
+    const netStock = getStockMapMinusCart(baseStock, p.productId);
+    const addableMore = getMaxAddable(p, netStock);
+    const outOfStock = addableMore <= 0;
+    const soldOutEntirely = outOfStock && !inCart;
+
+    const plusBtn = card.querySelector('.miq-plus');
+    if (plusBtn) plusBtn.classList.toggle('miq-disabled', outOfStock);
+
+    card.classList.toggle('out-of-stock', soldOutEntirely);
+
+    const tap = card.querySelector('.menu-item-tap');
+    if (tap) tap.setAttribute('onclick', soldOutEntirely ? '' : `menuCardQty('${p.productId}', 1)`);
+
+    let badge = card.querySelector('.menu-item-soldout-badge');
+    if (soldOutEntirely && !badge) {
+      badge = document.createElement('span');
+      badge.className = 'menu-item-soldout-badge';
+      badge.textContent = 'Out of Stock';
+      card.prepend(badge);
+    } else if (!soldOutEntirely && badge) {
+      badge.remove();
+    }
+  });
 }
 
 // =================== CART ===================
 function menuCardQty(productId, delta) {
   const p = allProducts.find(x => x.productId == productId);
   if (!p) return;
+
+  if (delta > 0) {
+    const remainingAddable = getRemainingAddable(p);
+    if (remainingAddable <= 0) {
+      showToast(`🚫 ${p.name} is out of stock (ingredients depleted)`, 'error');
+      return;
+    }
+  }
 
   const existing = cart.find(i => i.id == productId);
   if (existing) {
@@ -246,6 +368,7 @@ function menuCardQty(productId, delta) {
       cart = cart.filter(i => i.id !== productId);
       updateCardDisplay(productId, 0);
       renderCart(); updateTotals(); updateFloatCartBadge();
+      refreshStockLimits();
       return;
     }
   } else {
@@ -256,6 +379,7 @@ function menuCardQty(productId, delta) {
   const newQty = cart.find(i => i.id == productId)?.qty || 0;
   updateCardDisplay(productId, newQty);
   renderCart(); updateTotals(); updateFloatCartBadge();
+  refreshStockLimits();
 }
 
 function updateCardDisplay(productId, qty) {
@@ -275,14 +399,26 @@ function removeFromCart(id) {
   cart = cart.filter(i => i.id !== id);
   updateCardDisplay(id, 0);
   renderCart(); updateTotals(); updateFloatCartBadge();
+  refreshStockLimits();
 }
 
 function changeQty(id, delta) {
   const item = cart.find(i => i.id === id);
   if (!item) return;
+
+  if (delta > 0) {
+    const p = allProducts.find(x => x.productId == id);
+    if (p && getRemainingAddable(p) <= 0) {
+      showToast(`🚫 ${p.name} is out of stock (ingredients depleted)`, 'error');
+      return;
+    }
+  }
+
   item.qty += delta;
   if (item.qty <= 0) { removeFromCart(id); return; }
   renderCart(); updateTotals();
+  updateCardDisplay(id, item.qty);
+  refreshStockLimits();
 }
 
 function setQty(id, val) {
@@ -425,6 +561,15 @@ function updateOrderNumDisplay() {
 async function processPayment() {
   if (!cart.length) return;
 
+  // Reload stock cache right before final check (in case inventory changed mid-order)
+  await loadStockMapCache();
+  const stockError = validateCartAgainstStock();
+  if (stockError) {
+    showToast(`🚫 ${stockError}`, 'error');
+    renderMenuGrid();
+    return;
+  }
+
   const total = getTotal();
   const cash = parseFloat(document.getElementById('cashTendered')?.value) || 0;
 
@@ -455,10 +600,71 @@ async function processPayment() {
   orderCounter++;
   await dbSetSetting('orderCounter', orderCounter);
 
+  // Auto-deduct ingredients from today's inventory
+  await autoDeductIngredients(order.items);
+  await loadStockMapCache(); // refresh stock cache after deduction
+
   showReceipt(order);
   clearOrder();
   updateOrderNumDisplay();
   showToast('✅ Payment successful!', 'success');
+}
+
+// Final safety check: verifies every cart item has a recipe and enough stock.
+// Returns null if OK, or an error string to display.
+function validateCartAgainstStock() {
+  const baseStock = getIngredientStockMap();
+  const needed = {};
+
+  for (const item of cart) {
+    const product = allProducts.find(p => p.productId == item.id);
+    if (!product || !product.recipe || !product.recipe.length) {
+      return `${item.name} has no linked recipe and cannot be sold. Please add ingredients in Manage Products.`;
+    }
+    for (const r of product.recipe) {
+      const key = (r.ingredient || '').trim().toLowerCase();
+      needed[key] = (needed[key] || 0) + (r.qty || 1) * item.qty;
+    }
+  }
+
+  for (const key in needed) {
+    const available = Object.prototype.hasOwnProperty.call(baseStock, key) ? baseStock[key] : 0;
+    if (needed[key] > available) {
+      return `Not enough stock — ingredient ran out. Please adjust quantities.`;
+    }
+  }
+  return null;
+}
+
+// Auto-deduct sold ingredients from today's opening inventory record
+async function autoDeductIngredients(soldItems) {
+  try {
+    const dateKey = new Date().toISOString().split('T')[0];
+    const dayInv = await dbGetInventory(dateKey);
+    if (!dayInv || !dayInv.opening || !dayInv.opening.ingredients || !dayInv.opening.ingredients.length) return;
+
+    const ings = dayInv.opening.ingredients;
+    ings.forEach(ing => { if (ing.usedQty === undefined) ing.usedQty = 0; });
+
+    let changed = false;
+    soldItems.forEach(item => {
+      const product = allProducts.find(p => p.productId == item.id);
+      if (!product || !product.recipe || !product.recipe.length) return;
+      product.recipe.forEach(recipeItem => {
+        const totalDeduct = (recipeItem.qty || 1) * item.qty;
+        const ing = ings.find(i => (i.name || '').trim().toLowerCase() === (recipeItem.ingredient || '').trim().toLowerCase());
+        if (ing) {
+          const available = Math.max(0, (ing.qty || 0) - (ing.usedQty || 0));
+          ing.usedQty = (ing.usedQty || 0) + Math.min(totalDeduct, available);
+          changed = true;
+        }
+      });
+    });
+
+    if (changed) await dbSaveInventory(dateKey, dayInv);
+  } catch(e) {
+    console.warn('autoDeductIngredients error:', e);
+  }
 }
 
 function clearOrder() {
@@ -886,6 +1092,8 @@ async function saveDelivery() {
 
   closeDeliveryModal();
   await renderDeliveryLog();
+  await loadStockMapCache();
+  if (document.getElementById('menuGrid')) renderMenuGrid();
   showToast('✅ Delivery recorded & added to inventory!', 'success');
 }
 
@@ -1322,6 +1530,9 @@ async function saveInvModal() {
   await dbSaveInventory(dateKey, dayInv);
   closeModal('invModal');
   await renderInventory();
+  // Inventory changed — refresh stock cache so the New Order page reflects new stock
+  await loadStockMapCache();
+  if (document.getElementById('menuGrid')) renderMenuGrid();
   showToast(invModalType === 'opening' ? '✅ Opening inventory saved!' : '✅ Closing inventory saved!', 'success');
 }
 
