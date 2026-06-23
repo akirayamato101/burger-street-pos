@@ -3471,6 +3471,9 @@ function renderInventory() {
   }
   openingList.innerHTML = openHTML || `<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No opening inventory set.</p>`;
 
+  // Render priority low stock panel (always shown when opening data exists)
+  renderPriorityStockPanel();
+
   // ── Closing list ─────────────────────────────────────────────────────────
   const closingList = document.getElementById('invClosingList');
   const hasClosing = closeIngredients.length > 0 || closeAmounts.length > 0;
@@ -3799,6 +3802,175 @@ function renderInventory() {
   }
 }
 
+
+// =================== PRIORITY LOW STOCK ALERTS ===================
+// Stores 5 priority items: [{ name, threshold }]
+// Default items: Burger Patty, Burger Buns, Cheese Slice, Plastic Wrapper, Eggs
+const PRIORITY_STOCK_KEY = 'burgerStreetPriorityStock';
+
+const PRIORITY_STOCK_DEFAULTS = [
+  { name: 'Burger Patty',    threshold: 10 },
+  { name: 'Burger Buns',     threshold: 10 },
+  { name: 'Cheese Slice',    threshold: 10 },
+  { name: 'Plastic Wrapper', threshold: 10 },
+  { name: 'Eggs',            threshold: 10 },
+];
+
+function loadPriorityStock() {
+  try {
+    const s = localStorage.getItem(PRIORITY_STOCK_KEY);
+    if (s) return JSON.parse(s);
+  } catch (e) {}
+  return PRIORITY_STOCK_DEFAULTS.map(d => ({ ...d }));
+}
+
+function savePriorityStock(list) {
+  try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(list)); } catch (e) {}
+}
+
+// Called from renderInventory() after the opening list is built.
+// Reads today's active shift stock and renders per-item alert pills.
+function renderPriorityStockPanel() {
+  const panel = document.getElementById('invPriorityStockPanel');
+  const list  = document.getElementById('invPriorityStockList');
+  const badge = document.getElementById('invPriorityAlertBadge');
+  if (!panel || !list) return;
+
+  const priorities = loadPriorityStock();
+
+  // Get live remaining stock from today's active shift
+  const dateKey = getTodayInvKey();
+  const data = loadInventoryData();
+  const activeShift = getActiveShift(dateKey, data);
+  const openIngs = activeShift?.opening?.ingredients || [];
+  const isActiveShiftToday = dateKey === getLocalDateKey();
+
+  let alertCount = 0;
+  const rows = priorities.map(p => {
+    const ing = openIngs.find(i => (i.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase());
+
+    if (!ing) {
+      // Not in today's inventory at all
+      return { name: p.name, threshold: p.threshold, remaining: null, status: 'not-set' };
+    }
+
+    const opened = ing.qty || 0;
+    const used   = ing.usedQty || 0;
+    const remaining = isActiveShiftToday ? Math.max(0, opened - used) : opened;
+    const status = remaining === 0 ? 'out' : remaining <= p.threshold ? 'low' : 'ok';
+    if (status === 'out' || status === 'low') alertCount++;
+    return { name: p.name, unit: ing.unit || 'pcs', threshold: p.threshold, remaining, status };
+  });
+
+  // Show/hide panel — always show so the cashier can see the 5 priorities
+  panel.style.display = 'block';
+
+  // Badge
+  if (alertCount > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = alertCount + ' LOW';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  list.innerHTML = rows.map(r => {
+    let bg, borderColor, dot, label, qtyText;
+    if (r.status === 'not-set') {
+      bg = 'rgba(255,255,255,0.03)'; borderColor = 'var(--border)';
+      dot = '⚪'; label = 'Not in inventory';
+      qtyText = '<span style="color:var(--text3);font-size:0.78rem;">—</span>';
+    } else if (r.status === 'out') {
+      bg = 'rgba(239,68,68,0.1)'; borderColor = 'rgba(239,68,68,0.5)';
+      dot = '🔴'; label = 'OUT OF STOCK';
+      qtyText = `<span style="color:var(--red);font-weight:800;font-size:1rem;">0 ${escHtml(r.unit||'pcs')}</span>`;
+    } else if (r.status === 'low') {
+      bg = 'rgba(232,124,30,0.1)'; borderColor = 'rgba(232,124,30,0.5)';
+      dot = '🟠'; label = `LOW — threshold: ≤${r.threshold}`;
+      qtyText = `<span style="color:var(--orange);font-weight:800;font-size:1rem;">${r.remaining} ${escHtml(r.unit||'pcs')}</span>`;
+    } else {
+      bg = 'rgba(16,185,129,0.07)'; borderColor = 'rgba(16,185,129,0.3)';
+      dot = '🟢'; label = 'Good stock';
+      qtyText = `<span style="color:var(--green);font-weight:800;font-size:1rem;">${r.remaining} ${escHtml(r.unit||'pcs')}</span>`;
+    }
+
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;
+                  padding:8px 12px;border-radius:10px;border:1px solid ${borderColor};
+                  background:${bg};flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <span style="font-size:1rem;">${dot}</span>
+          <div>
+            <div style="font-weight:800;font-size:0.88rem;">${escHtml(r.name)}</div>
+            <div style="font-size:0.7rem;color:var(--text3);font-weight:700;">${label}</div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          ${qtyText}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// Open the Priority Stock Settings modal
+function openPriorityStockSettings() {
+  const priorities = loadPriorityStock();
+  const container = document.getElementById('priorityStockSettingsList');
+  if (!container) return;
+
+  // Get ingredient name suggestions from template + today's inventory
+  const tpl = loadIngredientTemplate();
+  const tplNames = (tpl.ingredients || []).map(i => i.name);
+  const dateKey = getTodayInvKey();
+  const data = loadInventoryData();
+  const activeShift = getActiveShift(dateKey, data);
+  const todayNames = (activeShift?.opening?.ingredients || []).map(i => i.name);
+  const allNames = [...new Set([...todayNames, ...tplNames,
+    'Burger Patty','Burger Buns','Cheese Slice','Plastic Wrapper','Eggs'])];
+
+  // Inject datalist for ingredient name autocomplete
+  const existingDl = document.getElementById('prioritySuggestList');
+  if (existingDl) existingDl.remove();
+  const dl = document.createElement('datalist');
+  dl.id = 'prioritySuggestList';
+  allNames.forEach(n => { const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
+  document.body.appendChild(dl);
+
+  container.innerHTML = priorities.map((p, idx) => `
+    <div style="background:var(--bg2);border-radius:10px;padding:12px 14px;border:1px solid var(--border);">
+      <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">PRIORITY ${idx + 1}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="ps_name_${idx}" value="${escHtml(p.name)}" placeholder="Ingredient name"
+          class="input-field" style="flex:1;min-width:140px;font-size:0.88rem;padding:7px 10px;"
+          list="prioritySuggestList" />
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+          <span style="font-size:0.78rem;color:var(--text3);font-weight:700;white-space:nowrap;">Alert when ≤</span>
+          <input type="number" id="ps_thr_${idx}" value="${p.threshold}" min="1" max="9999" step="1"
+            class="input-field"
+            style="width:72px;font-size:1rem;font-weight:800;text-align:center;padding:7px 8px;
+                   color:var(--orange);border-color:rgba(232,124,30,0.5);"
+            oninput="this.value=Math.max(1,parseInt(this.value)||1)" />
+          <span style="font-size:0.78rem;color:var(--text3);font-weight:700;">pcs</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('priorityStockModal').classList.remove('hidden');
+}
+
+function savePriorityStockSettings() {
+  const priorities = loadPriorityStock().map((p, idx) => {
+    const nameEl = document.getElementById(`ps_name_${idx}`);
+    const thrEl  = document.getElementById(`ps_thr_${idx}`);
+    const name      = nameEl ? nameEl.value.trim() : p.name;
+    const threshold = thrEl  ? (Math.max(1, parseInt(thrEl.value) || 1)) : p.threshold;
+    return { name: name || p.name, threshold };
+  });
+  savePriorityStock(priorities);
+  closeModal('priorityStockModal');
+  renderInventory();
+  showToast('✅ Priority stock alerts saved!', 'success');
+}
 
 // =================== PRINT ===================
 const printStyle = `
