@@ -1421,13 +1421,21 @@ function escHtml(str) {
 // of stock) — so a cashier can tell stock health at a glance without reading
 // the number itself. Negative quantities (shouldn't normally occur, but
 // stock math elsewhere already floors at 0) are treated the same as 0.
-// Returns the threshold for a named ingredient (from Priority Stock Alerts),
-// or the default of 10 if no custom threshold has been set.
+// Returns the custom alert threshold for a named ingredient, or null if no
+// alert has been configured for it. Callers that need a numeric fallback for
+// coloring purposes should use getIngredientThresholdOrDefault() instead.
 function getIngredientThreshold(name) {
-  if (!name) return 10;
+  if (!name) return null;
   const thresholds = loadPriorityThresholds();
   const custom = thresholds[(name + '').toLowerCase()];
-  return (custom !== undefined && custom !== null) ? custom : 10;
+  return (custom !== undefined && custom !== null) ? Number(custom) : null;
+}
+
+// Like getIngredientThreshold but returns 10 when no custom alert is set,
+// used by stockLevelColor/stockLevelLabel where a numeric value is always needed.
+function getIngredientThresholdOrDefault(name) {
+  const t = getIngredientThreshold(name);
+  return t !== null ? t : 10;
 }
 
 // Accepts an optional ingredient name so it can look up a per-ingredient
@@ -1435,7 +1443,7 @@ function getIngredientThreshold(name) {
 // default threshold of 10 when the name is not supplied or has no custom value.
 function stockLevelColor(qty, name) {
   const n = Number(qty) || 0;
-  const threshold = getIngredientThreshold(name);
+  const threshold = getIngredientThresholdOrDefault(name);
   if (n <= 0) return 'var(--red)';
   if (n <= threshold) return 'var(--orange)';
   return 'var(--green)';
@@ -1448,7 +1456,7 @@ function stockLevelColor(qty, name) {
 // rely on a colored dot/background alone to convey meaning.
 function stockLevelLabel(qty, name) {
   const n = Number(qty) || 0;
-  const threshold = getIngredientThreshold(name);
+  const threshold = getIngredientThresholdOrDefault(name);
   if (n <= 0) return 'Out of Stock';
   if (n <= threshold) return 'Low Stock';
   return 'Good Stock';
@@ -3458,8 +3466,11 @@ function renderInventory() {
       // Stock-level color now respects the per-ingredient custom threshold
       // set in Priority Stock Alerts (falls back to 10 if none is set).
       const headlineColor = stockLevelColor(headline, i.name);
-      const threshold = getIngredientThreshold(i.name);
-      const isLowStock = headline > 0 && headline <= threshold;
+      // Only show the Low Stock badge when the user has explicitly configured
+      // an alert threshold for this ingredient — getIngredientThreshold returns
+      // null when no alert is set, so we never badge items that were never configured.
+      const customThreshold = getIngredientThreshold(i.name);
+      const isLowStock = customThreshold !== null && headline > 0 && headline <= customThreshold;
       return `
       <div class="inv-list-item" style="flex-direction:column;align-items:stretch;gap:2px;">
         <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
@@ -3645,7 +3656,7 @@ function renderInventory() {
         if (shortAmount > 0) totalShorts++;
         const ingThreshold = getIngredientThreshold(name);
         const effectiveClose = hasActual ? actualQty : endQty;
-        const isCloseLow = effectiveClose !== null && effectiveClose > 0 && effectiveClose <= ingThreshold;
+        const isCloseLow = ingThreshold !== null && effectiveClose !== null && effectiveClose > 0 && effectiveClose <= ingThreshold;
         let status = shortAmount > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ${shortAmount} ${escHtml(unit)}</span>`
           : (endQty === 0 || (hasActual && actualQty === 0)) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
           : isCloseLow ? `<span class="inv-status-tag inv-tag-low">⚡ Low Stock</span>`
@@ -3692,7 +3703,7 @@ function renderInventory() {
         // last shift ended with nothing left; Low Stock when the last known
         // closing qty is at/below the custom threshold; OK otherwise.
         const ingThresholdM = getIngredientThreshold(name);
-        const isLastShiftLow = lastEndQty !== null && lastEndQty > 0 && lastEndQty <= ingThresholdM;
+        const isLastShiftLow = ingThresholdM !== null && lastEndQty !== null && lastEndQty > 0 && lastEndQty <= ingThresholdM;
         const statusTag = totalShortQty > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ${totalShortQty} ${escHtml(unit)}</span>`
           : (lastEndQty === 0 && everHadStock) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
           : isLastShiftLow ? `<span class="inv-status-tag inv-tag-low">⚡ Low Stock</span>`
