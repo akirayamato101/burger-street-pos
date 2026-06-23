@@ -3,7 +3,7 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v5';
+const CACHE_NAME = 'burger-pos-v6';
 
 const ASSETS_TO_CACHE = [
   '/',
