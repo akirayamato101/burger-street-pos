@@ -1421,6 +1421,23 @@ function escHtml(str) {
 // of stock) — so a cashier can tell stock health at a glance without reading
 // the number itself. Negative quantities (shouldn't normally occur, but
 // stock math elsewhere already floors at 0) are treated the same as 0.
+// =================== PRIORITY STOCK THRESHOLDS (storage) ===================
+// Defined here — above getIngredientThreshold — so PRIORITY_STOCK_KEY (a const,
+// not hoisted) is always initialised before any threshold lookup runs.
+const PRIORITY_STOCK_KEY = 'burgerStreetPriorityStock';
+
+function loadPriorityThresholds() {
+  try {
+    const s = localStorage.getItem(PRIORITY_STOCK_KEY);
+    if (s) return JSON.parse(s);
+  } catch (e) {}
+  return {};
+}
+
+function savePriorityThresholds(map) {
+  try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(map)); } catch (e) {}
+}
+
 // Returns the custom alert threshold for a named ingredient, or null if no
 // alert has been configured for it. Callers that need a numeric fallback for
 // coloring purposes should use getIngredientThresholdOrDefault() instead.
@@ -3844,27 +3861,7 @@ function renderInventory() {
 }
 
 
-// =================== PRIORITY LOW STOCK ALERTS ===================
-// Stores 5 priority items: [{ name, threshold }]
-// Default items: Burger Patty, Burger Buns, Cheese Slice, Plastic Wrapper, Eggs
 // =================== PRIORITY STOCK ALERTS ===================
-// Thresholds are stored per ingredient name: { [name]: threshold }
-// The ingredient list itself always comes from today's opening inventory —
-// no hardcoded list, whatever the cashier entered is what appears here.
-const PRIORITY_STOCK_KEY = 'burgerStreetPriorityStock';
-
-function loadPriorityThresholds() {
-  try {
-    const s = localStorage.getItem(PRIORITY_STOCK_KEY);
-    if (s) return JSON.parse(s);
-  } catch (e) {}
-  return {}; // { 'Burger Patty': 10, 'Burger Buns': 10, ... }
-}
-
-function savePriorityThresholds(map) {
-  try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(map)); } catch (e) {}
-}
-
 // Returns the live remaining stock for each opening ingredient in the active shift.
 function getPriorityStockStatus() {
   const thresholds = loadPriorityThresholds();
