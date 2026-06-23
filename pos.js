@@ -1865,18 +1865,9 @@ function renderDeliveryLog() {
         <div style="text-align:right;flex-shrink:0;">
           <div style="font-size:0.78rem;font-weight:700;color:var(--text2);">${dateStr}</div>
           <div style="font-size:0.78rem;color:var(--text3);">${timeStr}</div>
-          <button onclick="deleteDelivery(${d.id})" style="background:none;border:none;color:var(--red);font-size:0.75rem;cursor:pointer;margin-top:4px;font-weight:700;">🗑 Remove</button>
         </div>
       </div>`;
   }).join('');
-}
-
-function deleteDelivery(id) {
-  if (!confirm('Remove this record?')) return;
-  const dl = loadSharedDeliveries().filter(d => d.id !== id);
-  saveSharedDeliveries(dl);
-  renderDeliveryLog();
-  showToast('Record removed.', 'success');
 }
 
 // =================== CASH ADVANCE ===================
@@ -3773,6 +3764,8 @@ const printStyle = `
     #invReportPrintArea { display: block !important; position: static !important; background: #fff !important; padding: 0 !important; }
     #invReportPrintArea table { width: 100% !important; table-layout: auto; }
     #invReportPrintArea tr { page-break-inside: avoid; }
+    #invOpeningPrintArea { display: block !important; position: static !important; background: #fff !important; padding: 0 !important; }
+    #invOpeningPrintArea .inv-list-item { page-break-inside: avoid; }
     * { color: #000 !important; background: #fff !important; }
   }
 `;
@@ -3893,6 +3886,117 @@ function printInventoryReport() {
     window.print();
     setTimeout(() => area.remove(), 500);
   }, 50);
+}
+
+// =================== OPENING INVENTORY — PRINT / PDF ===================
+// Mirrors the Daily Inventory Report print/PDF pair above, but scoped to just
+// the #invOpeningList block (ingredients + cash amounts for the currently
+// viewed shift), so a cashier can hand over / file a record of opening stock
+// without needing the full open-vs-close comparison report.
+
+function buildOpeningInventoryPrintArea() {
+  const openingList = document.getElementById('invOpeningList');
+  if (!openingList || !openingList.innerHTML.trim() || openingList.querySelector('p')) {
+    showToast('No opening inventory set for this date/shift yet.', 'error');
+    return null;
+  }
+
+  const { dateLabel, cashierName } = getInventoryReportHeaderInfo();
+  const listClone = openingList.cloneNode(true);
+
+  const wrap = document.createElement('div');
+  wrap.id = 'invOpeningPrintArea';
+  wrap.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#fff;color:#000;padding:24px;z-index:99999;display:none;font-family:Arial,Helvetica,sans-serif;';
+  wrap.innerHTML = `
+    <div style="text-align:center;margin-bottom:18px;">
+      <div style="font-size:1.4rem;font-weight:800;">${escHtml(BIZ_NAME)}</div>
+      <div style="font-size:1.05rem;font-weight:700;margin-top:4px;">Opening Inventory</div>
+      <div style="font-size:0.9rem;color:#444;margin-top:2px;">${escHtml(dateLabel)}</div>
+      <div style="font-size:0.82rem;color:#666;">Prepared by: ${escHtml(cashierName)}</div>
+    </div>
+  `;
+  const listWrap = document.createElement('div');
+  listWrap.style.cssText = 'color:#000;max-width:520px;margin:0 auto;';
+  listWrap.appendChild(listClone);
+  wrap.appendChild(listWrap);
+  document.body.appendChild(wrap);
+  return wrap;
+}
+
+function printOpeningInventory() {
+  const area = buildOpeningInventoryPrintArea();
+  if (!area) return;
+  area.style.display = 'block';
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => area.remove(), 500);
+  }, 50);
+}
+
+// Reads the live #invOpeningList DOM and converts it into a simple two-column
+// (Item | Qty/Amount) row list for autoTable — the live list uses free-form
+// styled divs (not a <table>), so this walks .inv-list-item rows directly
+// rather than reusing getInventoryReportTablesGrouped(), which expects an
+// actual <table> to scrape.
+function getOpeningInventoryRowsForPDF() {
+  const openingList = document.getElementById('invOpeningList');
+  const rows = [];
+  if (!openingList) return rows;
+  openingList.querySelectorAll('.inv-list-item').forEach(item => {
+    const cells = [...item.children].map(c => c.textContent.replace(/\s+/g, ' ').trim());
+    if (cells.length >= 2) rows.push([cells[0], cells[cells.length - 1]]);
+  });
+  return rows;
+}
+
+// Generates a clean, shareable PDF of the Opening Inventory using jsPDF +
+// autotable. Falls back to the Print dialog (Save as PDF) if the jsPDF
+// library failed to load (e.g. no internet on first run before the service
+// worker has cached it) — same fallback behavior as the full report export.
+function downloadOpeningInventoryPDF() {
+  if (typeof window.jspdf === 'undefined') {
+    showToast('PDF library not loaded yet — using Print instead. Choose "Save as PDF" in the print dialog.', '');
+    printOpeningInventory();
+    return;
+  }
+
+  const openingList = document.getElementById('invOpeningList');
+  if (!openingList || !openingList.innerHTML.trim() || openingList.querySelector('p')) {
+    showToast('No opening inventory set for this date/shift yet.', 'error');
+    return;
+  }
+
+  const { dateLabel, cashierName } = getInventoryReportHeaderInfo();
+  const rows = getOpeningInventoryRowsForPDF().map(r => r.map(pdfSafeText));
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  doc.setFontSize(16);
+  doc.setFont(undefined, 'bold');
+  doc.text(BIZ_NAME, pageWidth / 2, 40, { align: 'center' });
+  doc.setFontSize(12);
+  doc.text('Opening Inventory', pageWidth / 2, 58, { align: 'center' });
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(80);
+  doc.text(pdfSafeText(dateLabel), pageWidth / 2, 74, { align: 'center' });
+  doc.text(`Prepared by: ${pdfSafeText(cashierName)}`, pageWidth / 2, 88, { align: 'center' });
+  doc.setTextColor(0);
+
+  doc.autoTable({
+    head: [['Item', 'Qty / Amount']],
+    body: rows,
+    startY: 104,
+    styles: { fontSize: 9, cellPadding: 5 },
+    headStyles: { fillColor: [232, 124, 30], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 248, 248] },
+    margin: { left: 24, right: 24 }
+  });
+
+  const dateKey = getTodayInvKey();
+  doc.save(`Opening-Inventory-${dateKey}.pdf`);
 }
 
 // jsPDF's built-in fonts (Helvetica/Times/Courier) have no emoji glyphs at
