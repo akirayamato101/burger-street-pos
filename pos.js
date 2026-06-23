@@ -1620,7 +1620,12 @@ function togglePinEnabled() {
   }
 }
 
-// =================== DELIVERY LOG ===================
+// =================== STOCK MOVEMENTS (DELIVERIES + PULL-OUTS) ===================
+// A "movement" record is either:
+//  - type 'delivery': stock coming IN (received from supplier) — adds to opening qty
+//  - type 'pullout':  stock going OUT (damaged/expired/borrowed/internal use) — subtracts from opening qty
+// Both share the same shared log and the same dateKey/shiftIndex tagging scheme
+// that the inventory report uses to net them back out of "Total Used".
 
 function autoFillDeliveryQty() {
   const n = document.getElementById('deliveryQtyNum').value;
@@ -1631,7 +1636,59 @@ function autoFillDeliveryQty() {
   }
 }
 
-function openDeliveryModal() {
+function setDeliveryType(type) {
+  document.getElementById('deliveryType').value = type;
+
+  const btnDelivery = document.getElementById('deliveryTypeBtnDelivery');
+  const btnPullout = document.getElementById('deliveryTypeBtnPullout');
+  const title = document.getElementById('deliveryModalTitle');
+  const banner = document.getElementById('deliveryInfoBanner');
+  const qtyLabel = document.getElementById('deliveryQtyLabel');
+  const supplierWrap = document.getElementById('deliverySupplierWrap');
+  const reasonWrap = document.getElementById('pulloutReasonWrap');
+  const notesWrap = document.getElementById('pulloutNotesWrap');
+  const saveBtn = document.getElementById('deliverySaveBtn');
+
+  if (type === 'pullout') {
+    btnPullout.classList.add('btn-primary');
+    btnDelivery.classList.remove('btn-primary');
+    btnPullout.style.background = 'var(--red)';
+    btnPullout.style.color = '#fff';
+    btnDelivery.style.background = '';
+    btnDelivery.style.color = '';
+
+    title.textContent = '📤 Pull Out Stock';
+    banner.style.background = 'rgba(239,68,68,0.08)';
+    banner.style.borderColor = 'rgba(239,68,68,0.25)';
+    banner.style.color = 'var(--red)';
+    banner.innerHTML = '⚠️ This amount will be <strong>removed</strong> from today\'s inventory stock (damaged, expired, borrowed, etc.) — separately from normal sales usage.';
+    qtyLabel.textContent = 'QUANTITY TO PULL OUT *';
+    supplierWrap.style.display = 'none';
+    reasonWrap.style.display = 'block';
+    notesWrap.style.display = 'block';
+    saveBtn.textContent = '✅ Save & Remove from Inventory';
+  } else {
+    btnDelivery.classList.add('btn-primary');
+    btnPullout.classList.remove('btn-primary');
+    btnDelivery.style.background = '';
+    btnDelivery.style.color = '';
+    btnPullout.style.background = 'var(--red)';
+    btnPullout.style.color = '#fff';
+
+    title.textContent = '🚚 Record Stock Delivery';
+    banner.style.background = 'rgba(16,185,129,0.08)';
+    banner.style.borderColor = 'rgba(16,185,129,0.25)';
+    banner.style.color = 'var(--green)';
+    banner.innerHTML = '✅ Received items will automatically be added to today\'s inventory stock.';
+    qtyLabel.textContent = 'QUANTITY RECEIVED *';
+    supplierWrap.style.display = 'block';
+    reasonWrap.style.display = 'none';
+    notesWrap.style.display = 'none';
+    saveBtn.textContent = '✅ Save & Add to Inventory';
+  }
+}
+
+function openDeliveryModal(type = 'delivery') {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   document.getElementById('deliveryDateTime').value = local;
@@ -1640,15 +1697,26 @@ function openDeliveryModal() {
   document.getElementById('deliveryQtyNum').value = '';
   document.getElementById('deliveryUnit').value = 'pcs';
   document.getElementById('deliverySupplier').value = '';
+  document.getElementById('pulloutReason').value = 'Damaged/Spoiled';
+  document.getElementById('pulloutNotes').value = '';
 
-  // Populate the ingredient name suggestions from the master template
-  const tpl = loadIngredientTemplate();
+  // Populate the ingredient name suggestions — prefer today's actual stock list
+  // (so a pull-out can only reasonably target something currently on hand),
+  // falling back to the master ingredient template for everything else.
   const datalist = document.getElementById('deliveryItemSuggestions');
   if (datalist) {
-    datalist.innerHTML = (tpl.ingredients || [])
-      .map(i => `<option value="${escHtml(i.name)}"></option>`)
-      .join('');
+    const dateKey = getTodayInvKey();
+    const invData = loadInventoryData();
+    const todayShifts = invData[dateKey]?.shifts || [];
+    const activeShift = todayShifts[todayShifts.length - 1];
+    const stockNames = (activeShift?.opening?.ingredients || []).map(i => i.name);
+    const tpl = loadIngredientTemplate();
+    const tplNames = (tpl.ingredients || []).map(i => i.name);
+    const names = [...new Set([...stockNames, ...tplNames])];
+    datalist.innerHTML = names.map(n => `<option value="${escHtml(n)}"></option>`).join('');
   }
+
+  setDeliveryType(type);
 
   const modal = document.getElementById('deliveryModal');
   modal.style.display = 'flex';
@@ -1659,9 +1727,12 @@ function closeDeliveryModal() {
 }
 
 function saveDelivery() {
+  const type = document.getElementById('deliveryType').value === 'pullout' ? 'pullout' : 'delivery';
   const item = document.getElementById('deliveryItem').value.trim();
   const qty = document.getElementById('deliveryQty').value.trim();
   const supplier = document.getElementById('deliverySupplier').value.trim();
+  const reason = document.getElementById('pulloutReason').value;
+  const pulloutNotes = document.getElementById('pulloutNotes').value.trim();
   const dt = document.getElementById('deliveryDateTime').value;
   const unit = document.getElementById('deliveryUnit').value.trim() || 'pcs';
   const qtyNum = parseFloat(document.getElementById('deliveryQtyNum').value) || 0;
@@ -1669,33 +1740,59 @@ function saveDelivery() {
   if (!item) { showToast('Please enter an item name.', 'error'); return; }
   if (!qty) { showToast('Please enter a quantity.', 'error'); return; }
 
-  const delivery = {
+  const dateKey = getTodayInvKey();
+  const invData = loadInventoryData();
+
+  // For pull-outs, check current stock so the cashier can't silently push an
+  // ingredient negative without at least being warned — damaged/borrowed stock
+  // can only come out of what's actually on hand.
+  if (type === 'pullout' && qtyNum > 0) {
+    if (!invData[dateKey]) invData[dateKey] = {};
+    if (!invData[dateKey].shifts) {
+      const legacy = {};
+      if (invData[dateKey].opening) { legacy.opening = invData[dateKey].opening; delete invData[dateKey].opening; }
+      if (invData[dateKey].closing) { legacy.closing = invData[dateKey].closing; delete invData[dateKey].closing; }
+      invData[dateKey].shifts = [legacy];
+    }
+    const activeShiftIdx = invData[dateKey].shifts.length - 1;
+    const activeShift = invData[dateKey].shifts[activeShiftIdx];
+    const ings = activeShift.opening?.ingredients || [];
+    const existing = ings.find(i => i.name.trim().toLowerCase() === item.toLowerCase());
+    const currentQty = existing ? (existing.qty || 0) : 0;
+    if (qtyNum > currentQty) {
+      const proceed = confirm(`⚠️ Only ${currentQty} ${unit} of "${item}" is currently in stock, but you're pulling out ${qtyNum}. Continue anyway? (Stock will be set to 0.)`);
+      if (!proceed) return;
+    }
+  }
+
+  const movement = {
     id: Date.now(),
+    type, // 'delivery' (stock in) or 'pullout' (stock out)
     item,
     qty,
     qtyNum,
     unit,
-    supplier: supplier || '—',
+    supplier: type === 'delivery' ? (supplier || '—') : '—',
+    reason: type === 'pullout' ? reason : null,
+    notes: type === 'pullout' ? (pulloutNotes || '—') : null,
     datetime: dt || new Date().toISOString(),
     recordedBy: posState.settings.cashierName || CASHIER_NAME,
-    // dateKey/shiftIndex record exactly which inventory shift this delivery was
+    // dateKey/shiftIndex record exactly which inventory shift this movement was
     // folded into. The report uses these (not just the mutated opening qty) to
-    // know how much of "Total Used" is delivered stock vs. true consumption —
-    // without this, a delivery logged after a shift closes has no reliable way
-    // to be matched back to the shift it belongs to.
+    // know how much of "Total Used" is delivered/pulled stock vs. true
+    // consumption — without this, a movement logged after a shift closes has
+    // no reliable way to be matched back to the shift it belongs to.
     dateKey: null,
     shiftIndex: null
   };
 
   // Save to shared delivery log (visible to all cashiers)
   const sharedDeliveries = loadSharedDeliveries();
-  sharedDeliveries.unshift(delivery);
+  sharedDeliveries.unshift(movement);
   saveSharedDeliveries(sharedDeliveries);
 
-  // ── AUTO-ADD TO TODAY'S SHARED INVENTORY ──
+  // ── AUTO-APPLY TO TODAY'S SHARED INVENTORY ──
   if (qtyNum > 0) {
-    const dateKey = getTodayInvKey();
-    const invData = loadInventoryData();
     if (!invData[dateKey]) invData[dateKey] = {};
 
     // Ensure shifts array exists (multi-shift format)
@@ -1706,7 +1803,7 @@ function saveDelivery() {
       invData[dateKey].shifts = [legacy];
     }
 
-    // Add to the active (last) shift's opening ingredients
+    // Apply to the active (last) shift's opening ingredients
     const activeShiftIdx = invData[dateKey].shifts.length - 1;
     const activeShift = invData[dateKey].shifts[activeShiftIdx];
     if (!activeShift.opening) activeShift.opening = { ingredients: [], amounts: [] };
@@ -1715,17 +1812,20 @@ function saveDelivery() {
 
     // Find existing ingredient (case-insensitive match)
     const existing = ings.find(i => i.name.trim().toLowerCase() === item.toLowerCase());
+    const delta = type === 'pullout' ? -qtyNum : qtyNum;
     if (existing) {
-      existing.qty = (existing.qty || 0) + qtyNum;
-    } else {
+      existing.qty = Math.max(0, (existing.qty || 0) + delta);
+    } else if (type === 'delivery') {
       ings.push({ name: item, unit: unit, qty: qtyNum });
     }
+    // (A pull-out on an item with no existing stock record is logged but has
+    // nothing to subtract from — the warning above already covered this case.)
     saveInventoryData(invData);
 
-    // Record exactly where this delivery landed so the report can pull it back
-    // out of "Used" later, even if this shift has since closed.
-    delivery.dateKey = dateKey;
-    delivery.shiftIndex = activeShiftIdx;
+    // Record exactly where this movement landed so the report can pull it
+    // back out of "Used" later, even if this shift has since closed.
+    movement.dateKey = dateKey;
+    movement.shiftIndex = activeShiftIdx;
     saveSharedDeliveries(sharedDeliveries);
 
     renderInventory();
@@ -1734,7 +1834,7 @@ function saveDelivery() {
   closeDeliveryModal();
   renderDeliveryLog();
   if (document.getElementById('menuGrid')) renderMenuGrid();
-  showToast('✅ Delivery recorded & added to inventory!', 'success');
+  showToast(type === 'pullout' ? '✅ Stock pulled out & inventory updated!' : '✅ Delivery recorded & added to inventory!', 'success');
 }
 
 function renderDeliveryLog() {
@@ -1749,12 +1849,18 @@ function renderDeliveryLog() {
     const dt = new Date(d.datetime);
     const dateStr = dt.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
     const timeStr = dt.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    const isPullout = d.type === 'pullout';
+    const sign = isPullout ? '−' : '+';
+    const qtyColor = isPullout ? 'var(--red)' : 'var(--orange)';
+    const subline = isPullout
+      ? `📤 ${escHtml(d.reason || 'Pulled out')}${d.notes && d.notes !== '—' ? ' — ' + escHtml(d.notes) : ''} &nbsp;·&nbsp; 👤 ${escHtml(d.recordedBy)}`
+      : `📦 ${escHtml(d.supplier)} &nbsp;·&nbsp; 👤 ${escHtml(d.recordedBy)}`;
     return `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border);gap:10px;">
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:800;font-size:0.95rem;color:var(--text);">${escHtml(d.item)}</div>
-          <div style="font-size:0.82rem;color:var(--orange);font-weight:700;margin-top:2px;">Qty: ${d.qtyNum ? `${d.qtyNum} ${escHtml(d.unit||'pcs')}` : escHtml(d.qty)}</div>
-          <div style="font-size:0.78rem;color:var(--text3);margin-top:2px;">📦 ${escHtml(d.supplier)} &nbsp;·&nbsp; 👤 ${escHtml(d.recordedBy)}</div>
+          <div style="font-weight:800;font-size:0.95rem;color:var(--text);">${isPullout ? '📤 ' : ''}${escHtml(d.item)}</div>
+          <div style="font-size:0.82rem;color:${qtyColor};font-weight:700;margin-top:2px;">Qty: ${sign}${d.qtyNum ? `${d.qtyNum} ${escHtml(d.unit||'pcs')}` : escHtml(d.qty)}</div>
+          <div style="font-size:0.78rem;color:var(--text3);margin-top:2px;">${subline}</div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
           <div style="font-size:0.78rem;font-weight:700;color:var(--text2);">${dateStr}</div>
@@ -1766,11 +1872,11 @@ function renderDeliveryLog() {
 }
 
 function deleteDelivery(id) {
-  if (!confirm('Remove this delivery record?')) return;
+  if (!confirm('Remove this record?')) return;
   const dl = loadSharedDeliveries().filter(d => d.id !== id);
   saveSharedDeliveries(dl);
   renderDeliveryLog();
-  showToast('Delivery record removed.', 'success');
+  showToast('Record removed.', 'success');
 }
 
 // =================== CASH ADVANCE ===================
@@ -2022,7 +2128,7 @@ function confirmClearSelectedData() {
   const labels = [];
   if (wantOrders) labels.push('• All orders (every cashier)');
   if (wantProducts) labels.push('• Products / menu list');
-  if (wantInventory) labels.push('• Inventory records, delivery log, cash advance log');
+  if (wantInventory) labels.push('• Inventory records, stock delivery/pull-out log, cash advance log');
   if (wantIngList) labels.push('• Ingredient & supply name list');
   if (wantCashiers) labels.push('• Cashier accounts, PINs & settings');
 
@@ -3417,15 +3523,26 @@ function renderInventory() {
     let rows = '';
     let totalShorts = 0;
 
-    // Map deliveries (tagged with dateKey + shiftIndex at save time) to the
-    // shift/ingredient they actually belong to. This lets Total Used subtract
-    // delivered stock explicitly instead of leaving it folded into Opening —
-    // which previously meant a delivery logged after its shift had already
-    // closed never made it into that shift's Used calculation at all.
+    // Map deliveries/pull-outs (tagged with dateKey + shiftIndex at save time)
+    // to the shift/ingredient they actually belong to. This lets Total Used
+    // subtract delivered stock and add back pulled-out stock explicitly,
+    // instead of leaving them folded into Opening — which previously meant a
+    // movement logged after its shift had already closed never made it into
+    // that shift's Used calculation at all.
     const allDeliveries = loadSharedDeliveries();
     function deliveredQtyFor(itemName, shiftIdx) {
+      // Net of stock IN (delivery) minus stock OUT (pullout) for this
+      // ingredient/shift. Pull-outs partially cancel a delivery's effect on
+      // "Used" the same way deliveries do — both are non-sales movements that
+      // would otherwise distort how much was actually sold.
       return allDeliveries
         .filter(d => d.dateKey === dateKey && d.shiftIndex === shiftIdx
+          && d.item && d.item.trim().toLowerCase() === itemName.trim().toLowerCase())
+        .reduce((sum, d) => sum + (d.type === 'pullout' ? -(d.qtyNum || 0) : (d.qtyNum || 0)), 0);
+    }
+    function pulledOutQtyFor(itemName, shiftIdx) {
+      return allDeliveries
+        .filter(d => d.dateKey === dateKey && d.shiftIndex === shiftIdx && d.type === 'pullout'
           && d.item && d.item.trim().toLowerCase() === itemName.trim().toLowerCase())
         .reduce((sum, d) => sum + (d.qtyNum || 0), 0);
     }
@@ -3443,11 +3560,13 @@ function renderInventory() {
         const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
         const startQty = opI ? (opI.qty||0) : 0;
         const endQty   = clI ? (clI.closingQty ?? 0) : null;
-        // If this shift is already closed, any delivery tagged to it landed in
+        // If this shift is already closed, any movement tagged to it landed in
         // opening.qty AFTER closingQty was already locked in by the cashier —
-        // so that delivered amount was never actually available to be "used."
-        // Subtract it out, or Total Used balloons by the full delivered qty.
+        // so that delivered/pulled amount was never actually available to be
+        // "used" by sales. Net it out, or Total Used gets distorted by the
+        // full delivered/pulled qty.
         const deliveredQty = (s.closing ? deliveredQtyFor(name, 0) : 0);
+        const pulledQty = (s.closing ? pulledOutQtyFor(name, 0) : 0);
         const usedQty  = endQty !== null ? Math.max(0, (startQty - deliveredQty) - endQty) : null;
         unit = opI?.unit || clI?.unit || 'pcs';
         const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
@@ -3465,7 +3584,7 @@ function renderInventory() {
           : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
         rows += `<tr>
           <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
-          <td style="color:var(--orange);">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}</td>
+          <td style="color:var(--orange);">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.68rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>
           <td style="color:var(--green);">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty !== null ? (usedQty > 0 ? '-'+usedQty : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:var(--orange);font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
@@ -3480,10 +3599,11 @@ function renderInventory() {
           const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
           const startQty = opI ? (opI.qty||0) : 0;
           const endQty   = clI ? (clI.closingQty ?? 0) : (opI ? null : null);
-          // Exclude deliveries that arrived after this shift's closing was already
-          // recorded — they landed in opening.qty too late to be reflected in
-          // closingQty, so counting them as "used" overstates consumption.
+          // Exclude movements that arrived after this shift's closing was
+          // already recorded — they landed in opening.qty too late to be
+          // reflected in closingQty, so counting them distorts consumption.
           const deliveredQty = (s.closing ? deliveredQtyFor(name, si) : 0);
+          const pulledQty = (s.closing ? pulledOutQtyFor(name, si) : 0);
           const usedQty  = (endQty !== null) ? Math.max(0, (startQty - deliveredQty) - endQty) : 0;
           unit = opI?.unit || clI?.unit || unit;
           totalUsed += usedQty;
@@ -3493,7 +3613,7 @@ function renderInventory() {
           const actualQtyI = hasActualI ? clI.actualQty : null;
           const shortQtyI  = (hasActualI && endQty !== null) ? Math.max(0, endQty - actualQtyI) : null;
           if (shortQtyI !== null && shortQtyI > 0) { totalShorts++; totalShortQty += shortQtyI; }
-          cols += `<td style="color:var(--orange);">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}</td>`;
+          cols += `<td style="color:var(--orange);">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.65rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>`;
           cols += `<td style="color:var(--green);">${clI ? (endQty ?? '—') : '—'}</td>`;
           cols += `<td style="color:var(--orange);font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${shortQtyI>0?'var(--red)':'var(--text3);'}font-weight:${shortQtyI>0?'800':'400'};">${shortQtyI !== null ? (shortQtyI > 0 ? '-'+shortQtyI : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
