@@ -1428,6 +1428,35 @@ function stockLevelColor(qty) {
   return 'var(--green)';
 }
 
+// Same stock-level rule as stockLevelColor(), but returning the plain-English
+// label ("Good Stock" / "Low Stock" / "Out of Stock") instead of a color —
+// used by the Print/PDF exports below, which need a legend + a textual tag
+// since neither plain printed paper nor jsPDF's default cell rendering can
+// rely on a colored dot/background alone to convey meaning.
+function stockLevelLabel(qty) {
+  const n = Number(qty) || 0;
+  if (n <= 0) return 'Out of Stock';
+  if (n <= 10) return 'Low Stock';
+  return 'Good Stock';
+}
+
+// Resolves one of the three stockLevelColor() outputs — which are always the
+// literal CSS variable reference strings 'var(--green)', 'var(--orange)', or
+// 'var(--red)' — into an [r,g,b] triplet jsPDF can use directly (jsPDF has no
+// concept of CSS variables, so var(--xxx) must be hard-mapped to the same RGB
+// values defined for --green/--orange/--red in pos.css). Any other color
+// string (e.g. 'var(--blue)' used for cash amounts, or '' for uncolored
+// cells) intentionally returns null so only true stock-level cells get
+// colorized — matching the on-screen rule, which never stock-colors cash.
+function stockColorToRGB(cssVar) {
+  switch (cssVar) {
+    case 'var(--green)':  return [16, 185, 129];
+    case 'var(--orange)': return [232, 124, 30];
+    case 'var(--red)':    return [239, 68, 68];
+    default: return null;
+  }
+}
+
 // =================== PRODUCT MANAGEMENT ===================
 function refreshProductList() {
   const products = posState.customProducts || [];
@@ -3798,6 +3827,18 @@ document.head.appendChild(styleEl);
 // what the cashier sees on screen (same Total Used / Status fixes already applied
 // by renderInventory()) instead of duplicating that calculation logic separately.
 
+// Shared legend markup explaining the Good/Low/Out stock coloring used by
+// both Print exports below (Daily Inventory Report and Opening Inventory) —
+// kept in one place so the wording/thresholds can't drift between the two.
+function buildStockLegendHTML() {
+  return `
+    <div style="display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin:10px 0 16px;font-size:0.76rem;font-weight:700;">
+      <span style="color:var(--green);">&#9632; Good Stock (&gt;10)</span>
+      <span style="color:var(--orange);">&#9632; Low Stock (1&ndash;10)</span>
+      <span style="color:var(--red);">&#9632; Out of Stock (0)</span>
+    </div>`;
+}
+
 function getInventoryReportHeaderInfo() {
   const dateKey = getTodayInvKey();
   const dateLabel = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-PH', {
@@ -3816,8 +3857,19 @@ function getInventoryReportHeaderInfo() {
 function getInventoryReportTablesGrouped() {
   const table = document.getElementById('invReportTable');
   const headerCells = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+  // Each cell is captured as {text, color} instead of plain text. color is
+  // whatever literal value (if any) renderInventory() already set via
+  // td.style.color — for stock quantity cells that's always one of the
+  // stockLevelColor() outputs ('var(--green)' / 'var(--orange)' /
+  // 'var(--red)'), since that's the only thing that writes inline color
+  // there. Carrying this through (instead of discarding it, as the old
+  // textContent-only extraction did) is what lets the Print view and PDF
+  // export reproduce the same Good/Low/Out stock coloring shown on screen.
   const bodyRows = [...table.querySelectorAll('tbody tr')].map(tr =>
-    [...tr.querySelectorAll('td')].map(td => td.textContent.replace(/\s+/g, ' ').trim())
+    [...tr.querySelectorAll('td')].map(td => ({
+      text: td.textContent.replace(/\s+/g, ' ').trim(),
+      color: td.style.color || ''
+    }))
   );
 
   const isSingleShift = headerCells[1] === 'Opening';
@@ -3865,8 +3917,13 @@ function buildInventoryReportPrintArea() {
 
   function renderTableHTML(t) {
     const headHTML = t.head.map(h => `<th style="padding:6px 8px;border:1px solid #ccc;background:#e87c1e;color:#fff;text-align:left;font-size:0.78rem;">${escHtml(h)}</th>`).join('');
+    // c.color carries through whatever stockLevelColor() already set on
+    // screen (var(--green)/var(--orange)/var(--red), or '' for cells that
+    // were never stock-colored). CSS variables resolve fine here since this
+    // print area is appended into the same document that defines them at
+    // :root, so no hex conversion is needed for the Print path (unlike PDF).
     const rowsHTML = t.rows.map(r =>
-      `<tr>${r.map(c => `<td style="padding:5px 8px;border:1px solid #ddd;font-size:0.78rem;">${escHtml(c)}</td>`).join('')}</tr>`
+      `<tr>${r.map(c => `<td style="padding:5px 8px;border:1px solid #ddd;font-size:0.78rem;color:${c.color || '#000'};${c.color ? 'font-weight:700;' : ''}">${escHtml(c.text)}</td>`).join('')}</tr>`
     ).join('');
     return `
       ${t.title ? `<div style="font-weight:700;font-size:0.88rem;margin:14px 0 6px;color:#222;">${escHtml(t.title)}</div>` : ''}
@@ -3875,6 +3932,11 @@ function buildInventoryReportPrintArea() {
         <tbody>${rowsHTML}</tbody>
       </table>`;
   }
+
+  // Legend explaining the stock-level coloring used on the Open/Close/Actual
+  // quantity columns above, so the rule is clear on a standalone printed
+  // page (on screen it's learned by context; on paper it needs to be spelled out).
+  const legendHTML = buildStockLegendHTML();
 
   const wrap = document.createElement('div');
   wrap.id = 'invReportPrintArea';
@@ -3886,6 +3948,7 @@ function buildInventoryReportPrintArea() {
       <div style="font-size:0.9rem;color:#444;margin-top:2px;">${escHtml(dateLabel)}</div>
       <div style="font-size:0.82rem;color:#666;">Prepared by: ${escHtml(cashierName)} &nbsp;|&nbsp; Shorts found: ${escHtml(shortsCount)}</div>
     </div>
+    ${legendHTML}
     ${shiftTables.map(renderTableHTML).join('')}
     ${summaryTable ? renderTableHTML(summaryTable) : ''}
   `;
@@ -3933,6 +3996,7 @@ function buildOpeningInventoryPrintArea() {
       <div style="font-size:0.9rem;color:#444;margin-top:2px;">${escHtml(dateLabel)}</div>
       <div style="font-size:0.82rem;color:#666;">Prepared by: ${escHtml(cashierName)}</div>
     </div>
+    ${buildStockLegendHTML()}
   `;
   const listWrap = document.createElement('div');
   listWrap.style.cssText = 'color:#000;max-width:520px;margin:0 auto;';
@@ -4000,7 +4064,15 @@ function getOpeningInventoryRowsForPDF() {
       return raw.replace(/\s+/g, ' ').trim();
     };
     const cells = [...pairHolder.children].map(cellText);
-    if (cells.length >= 2 && cells[0]) rows.push([cells[0], cells[cells.length - 1]]);
+    // The value cell (qty for ingredients, amount for cash) is whichever
+    // element is last in pairHolder.children — renderInventory() already set
+    // its inline color via stockLevelColor() for ingredient rows (cash rows
+    // get a fixed var(--blue) instead, which deliberately isn't a stock
+    // color — see stockColorToRGB()'s null fallback below). Reading it here
+    // is what lets the PDF reproduce the same Good/Low/Out coloring shown
+    // on screen instead of rendering every row in plain black text.
+    const valueColor = pairHolder.lastElementChild ? pairHolder.lastElementChild.style.color || '' : '';
+    if (cells.length >= 2 && cells[0]) rows.push([cells[0], cells[cells.length - 1], valueColor]);
   });
   return rows;
 }
@@ -4023,7 +4095,13 @@ function downloadOpeningInventoryPDF() {
   }
 
   const { dateLabel, cashierName } = getInventoryReportHeaderInfo();
-  const rows = getOpeningInventoryRowsForPDF().map(r => r.map(pdfSafeText));
+  // rawRows carries a 3rd element per row (the qty/amount cell's stock
+  // color, or '' if none) — kept out of `rows` (the actual autoTable body)
+  // and looked up separately in didParseCell below, since autoTable body
+  // cells must be plain strings, not [text, color] pairs.
+  const rawRows = getOpeningInventoryRowsForPDF();
+  const rows = rawRows.map(r => [pdfSafeText(r[0]), pdfSafeText(r[1])]);
+  const rowColors = rawRows.map(r => r[2] || '');
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
@@ -4041,14 +4119,39 @@ function downloadOpeningInventoryPDF() {
   doc.text(`Prepared by: ${pdfSafeText(cashierName)}`, pageWidth / 2, 88, { align: 'center' });
   doc.setTextColor(0);
 
+  // Legend for the Good/Low/Out stock coloring applied to the Qty / Amount
+  // column below — drawn with colored text so it doubles as a sample swatch.
+  const legendY = 100;
+  doc.setFontSize(8);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('Good Stock (>10)', pageWidth / 2 - 130, legendY, { align: 'center' });
+  doc.setTextColor(232, 124, 30);
+  doc.text('Low Stock (1-10)', pageWidth / 2, legendY, { align: 'center' });
+  doc.setTextColor(239, 68, 68);
+  doc.text('Out of Stock (0)', pageWidth / 2 + 130, legendY, { align: 'center' });
+  doc.setTextColor(0);
+  doc.setFont(undefined, 'normal');
+
   doc.autoTable({
     head: [['Item', 'Qty / Amount']],
     body: rows,
-    startY: 104,
+    startY: legendY + 14,
     styles: { fontSize: 9, cellPadding: 5 },
     headStyles: { fillColor: [232, 124, 30], textColor: 255, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [248, 248, 248] },
-    margin: { left: 24, right: 24 }
+    margin: { left: 24, right: 24 },
+    didParseCell: function(data) {
+      // Only the Qty/Amount column (index 1) ever carries a stock color —
+      // cash rows resolve to null via stockColorToRGB() and are left alone.
+      if (data.section === 'body' && data.column.index === 1) {
+        const rgb = stockColorToRGB(rowColors[data.row.index]);
+        if (rgb) {
+          data.cell.styles.textColor = rgb;
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
+    }
   });
 
   const dateKey = getTodayInvKey();
@@ -4078,7 +4181,11 @@ function pdfSafeTable(t) {
   return {
     title: t.title ? pdfSafeText(t.title) : null,
     head: t.head.map(pdfSafeText),
-    rows: t.rows.map(r => r.map(pdfSafeText))
+    // Each row cell is {text, color} (see getInventoryReportTablesGrouped) —
+    // sanitize the text for PDF-unsafe emoji while passing color through
+    // untouched so downloadInventoryReportPDF() can still map it to an RGB
+    // value for the cell.
+    rows: t.rows.map(r => r.map(c => ({ text: pdfSafeText(c.text), color: c.color || '' })))
   };
 }
 
@@ -4123,10 +4230,24 @@ function downloadInventoryReportPDF() {
   doc.text(`Prepared by: ${cashierName}   |   Shorts found: ${shortsCount}`, pageWidth / 2, 88, { align: 'center' });
   doc.setTextColor(0);
 
+  // Legend for the Good/Low/Out stock coloring applied to the Open/Close/
+  // Actual quantity columns below — drawn in colored text so it also serves
+  // as a sample swatch of each color.
+  doc.setFontSize(8);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('Good Stock (>10)', pageWidth / 2 - 130, 100, { align: 'center' });
+  doc.setTextColor(232, 124, 30);
+  doc.text('Low Stock (1-10)', pageWidth / 2, 100, { align: 'center' });
+  doc.setTextColor(239, 68, 68);
+  doc.text('Out of Stock (0)', pageWidth / 2 + 130, 100, { align: 'center' });
+  doc.setTextColor(0);
+  doc.setFont(undefined, 'normal');
+
   // One compact table per shift (Item | Open | Close | Actual | Short | Used),
   // stacked vertically — never wider than 6 columns, so it stays readable no
   // matter how many shifts the day had. autoTable auto-breaks across pages.
-  let y = 104;
+  let y = 116;
   const allTables = safeSummaryTable ? [...safeShiftTables, safeSummaryTable] : safeShiftTables;
   allTables.forEach((t, idx) => {
     if (t.title) {
@@ -4140,12 +4261,26 @@ function downloadInventoryReportPDF() {
     }
     doc.autoTable({
       head: [t.head],
-      body: t.rows,
+      body: t.rows.map(r => r.map(c => c.text)),
       startY: y,
       styles: { fontSize: 9, cellPadding: 5 },
       headStyles: { fillColor: [232, 124, 30], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 248, 248] },
-      margin: { left: 24, right: 24 }
+      margin: { left: 24, right: 24 },
+      didParseCell: function(data) {
+        // t.rows still holds the {text, color} objects in closure here, so
+        // look up this exact cell's color by position — only cells that
+        // were actually stock-colored on screen (Open/Close/Actual qty)
+        // resolve to a non-null RGB; everything else is left at default.
+        if (data.section === 'body') {
+          const cell = t.rows[data.row.index]?.[data.column.index];
+          const rgb = cell ? stockColorToRGB(cell.color) : null;
+          if (rgb) {
+            data.cell.styles.textColor = rgb;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
     });
     y = doc.lastAutoTable.finalY + 20;
   });
