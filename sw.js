@@ -3,24 +3,16 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v8';
+const CACHE_NAME = 'burger-pos-v5';
 
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/pos.css',
-  '/pos-core.js',
-  '/pos-auth.js',
-  '/pos-helpers.js',
-  '/pos-products.js',
-  '/pos-receipt.js',
-  '/pos-orders.js',
-  '/pos-movements.js',
-  '/pos-cashadvance.js',
-  '/pos-cashiers.js',
-  '/pos-inventory.js',
-  '/pos-reports.js',
+  '/pos.js',
   '/manifest.json',
+  // Dexie.js from CDN — cache it so app works fully offline
+  'https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js',
   // jsPDF + autotable — used to export the Daily Inventory Report as a PDF;
   // cached so the export still works with no internet connection.
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
@@ -49,12 +41,13 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// App code (HTML/JS/CSS) that affects business logic must use NETWORK-FIRST.
-// A pure cache-first strategy was the real reason past logic fixes never
-// reached the app: once a file was cached, the service worker kept serving
-// that exact cached copy forever and never checked the network again, even
-// after the file on the server was corrected. Network-first always tries to
-// fetch the latest file first, only falling back to cache when offline.
+// App code (HTML/JS/CSS) that affects business logic — e.g. pos.js, where the
+// inventory carry-over bug lives — must use NETWORK-FIRST. A pure cache-first
+// strategy here was the real reason past logic fixes never reached the app:
+// once pos.js was cached once, the service worker kept serving that exact
+// cached copy forever and never checked the network again, even after the
+// file on the server was corrected. Network-first always tries to fetch the
+// latest file first, only falling back to cache when offline.
 const NETWORK_FIRST_PATTERNS = [/\.html$/, /\.js$/, /\.css$/];
 
 function isNetworkFirst(request) {
