@@ -1421,10 +1421,23 @@ function escHtml(str) {
 // of stock) — so a cashier can tell stock health at a glance without reading
 // the number itself. Negative quantities (shouldn't normally occur, but
 // stock math elsewhere already floors at 0) are treated the same as 0.
-function stockLevelColor(qty) {
+// Returns the threshold for a named ingredient (from Priority Stock Alerts),
+// or the default of 10 if no custom threshold has been set.
+function getIngredientThreshold(name) {
+  if (!name) return 10;
+  const thresholds = loadPriorityThresholds();
+  const custom = thresholds[(name + '').toLowerCase()];
+  return (custom !== undefined && custom !== null) ? custom : 10;
+}
+
+// Accepts an optional ingredient name so it can look up a per-ingredient
+// custom low-stock threshold from Priority Stock Alerts. Falls back to the
+// default threshold of 10 when the name is not supplied or has no custom value.
+function stockLevelColor(qty, name) {
   const n = Number(qty) || 0;
+  const threshold = getIngredientThreshold(name);
   if (n <= 0) return 'var(--red)';
-  if (n <= 10) return 'var(--orange)';
+  if (n <= threshold) return 'var(--orange)';
   return 'var(--green)';
 }
 
@@ -1433,10 +1446,11 @@ function stockLevelColor(qty) {
 // used by the Print/PDF exports below, which need a legend + a textual tag
 // since neither plain printed paper nor jsPDF's default cell rendering can
 // rely on a colored dot/background alone to convey meaning.
-function stockLevelLabel(qty) {
+function stockLevelLabel(qty, name) {
   const n = Number(qty) || 0;
+  const threshold = getIngredientThreshold(name);
   if (n <= 0) return 'Out of Stock';
-  if (n <= 10) return 'Low Stock';
+  if (n <= threshold) return 'Low Stock';
   return 'Good Stock';
 }
 
@@ -3361,7 +3375,7 @@ function renderInventory() {
         // (closing qty once the shift is closed, otherwise the live/opening
         // qty) so this preview badge matches the same color logic as the
         // full Opening/Closing Inventory lists below.
-        const displayColor = stockLevelColor(closeQty !== null ? closeQty : displayQty);
+        const displayColor = stockLevelColor(closeQty !== null ? closeQty : displayQty, oi.name);
         return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3);border-radius:6px;padding:2px 8px;font-size:0.74rem;white-space:nowrap;">
           <span style="font-weight:700;">${escHtml(oi.name)}</span>
           <span style="color:${displayColor};">${displayQty}${closeQty !== null ? ` → ${closeQty}` : ''} ${escHtml(unit)}</span>
@@ -3441,15 +3455,19 @@ function renderInventory() {
       const used = i.usedQty || 0;
       const remaining = Math.max(0, opened - used);
       const headline = isActiveShiftToday ? remaining : opened;
-      // Stock-level rule: >10 green (good), 1-10 orange (low), 0 red (empty)
-      // — applied to whichever number is actually on screen (live remaining
-      // for today's active shift, plain opening qty otherwise), so the color
-      // always matches the headline number itself.
-      const headlineColor = stockLevelColor(headline);
+      // Stock-level color now respects the per-ingredient custom threshold
+      // set in Priority Stock Alerts (falls back to 10 if none is set).
+      const headlineColor = stockLevelColor(headline, i.name);
+      const threshold = getIngredientThreshold(i.name);
+      const isLowStock = headline > 0 && headline <= threshold;
       return `
       <div class="inv-list-item" style="flex-direction:column;align-items:stretch;gap:2px;">
         <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
-          <div><span style="font-weight:700;">${escHtml(i.name)}</span><span style="font-size:0.72rem;color:var(--text3);margin-left:6px;">${unit}</span></div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-weight:700;">${escHtml(i.name)}</span>
+            <span style="font-size:0.72rem;color:var(--text3);">${unit}</span>
+            ${isLowStock ? `<span style="font-size:0.68rem;font-weight:800;color:var(--orange);background:rgba(232,124,30,0.13);border:1px solid rgba(232,124,30,0.35);border-radius:6px;padding:1px 6px;white-space:nowrap;">⚡ Low Stock</span>` : ''}
+          </div>
           <span style="font-weight:800;color:${headlineColor};">${headline} <span style="font-size:0.72rem;color:var(--text3);">${unit}</span></span>
         </div>
         ${isActiveShiftToday && used > 0 ? `<div style="display:flex;justify-content:flex-end;gap:10px;font-size:0.72rem;color:var(--text3);">
@@ -3498,7 +3516,7 @@ function renderInventory() {
             ${hasActual && short > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">(${short} short — actual count used)</span>` : ''}
             ${hasActual && short < 0 ? `<span style="font-size:0.72rem;color:var(--orange);margin-left:6px;">(${Math.abs(short)} over — actual count used)</span>` : ''}
           </div>
-          <span style="font-weight:800;color:${stockLevelColor(effectiveQty)};">${effectiveQty} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
+          <span style="font-weight:800;color:${stockLevelColor(effectiveQty, i.name)};">${effectiveQty} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
         </div>`;
       }).join('');
     }
@@ -3621,18 +3639,23 @@ function renderInventory() {
         const vLabel = variance === null ? '—' : variance === 0 ? '✓ Match' : (variance > 0 ? `+${variance} over` : `${variance} short`);
         if (variance !== null && variance !== 0) anyVariance = true;
         // Status rule: Short shows the exact short count (actual physical count vs
-        // the expected closing qty); Empty when nothing is left; OK otherwise.
+        // the expected closing qty); Empty when nothing is left;
+        // Low Stock when closing qty is at or below the custom threshold; OK otherwise.
         const shortAmount = (hasActual && actualQty < endQty) ? (endQty - actualQty) : 0;
         if (shortAmount > 0) totalShorts++;
+        const ingThreshold = getIngredientThreshold(name);
+        const effectiveClose = hasActual ? actualQty : endQty;
+        const isCloseLow = effectiveClose !== null && effectiveClose > 0 && effectiveClose <= ingThreshold;
         let status = shortAmount > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ${shortAmount} ${escHtml(unit)}</span>`
           : (endQty === 0 || (hasActual && actualQty === 0)) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
+          : isCloseLow ? `<span class="inv-status-tag inv-tag-low">⚡ Low Stock</span>`
           : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
         rows += `<tr>
           <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
-          <td style="color:${stockLevelColor(startQty)};">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.68rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>
-          <td style="color:${endQty !== null ? stockLevelColor(endQty) : ''};">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
+          <td style="color:${stockLevelColor(startQty, name)};">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.68rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>
+          <td style="color:${endQty !== null ? stockLevelColor(endQty, name) : ''};">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty !== null ? (usedQty > 0 ? '-'+usedQty : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
-          <td style="color:${hasActual ? stockLevelColor(actualQty) : ''};font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
+          <td style="color:${hasActual ? stockLevelColor(actualQty, name) : ''};font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${vColor};font-weight:800;">${vLabel}</td>
           <td>${status}</td></tr>`;
       } else {
@@ -3658,17 +3681,21 @@ function renderInventory() {
           const actualQtyI = hasActualI ? clI.actualQty : null;
           const shortQtyI  = (hasActualI && endQty !== null) ? Math.max(0, endQty - actualQtyI) : null;
           if (shortQtyI !== null && shortQtyI > 0) { totalShorts++; totalShortQty += shortQtyI; }
-          cols += `<td style="color:${opI ? stockLevelColor(startQty) : ''};">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.65rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>`;
-          cols += `<td style="color:${clI && endQty !== null ? stockLevelColor(endQty) : ''};">${clI ? (endQty ?? '—') : '—'}</td>`;
-          cols += `<td style="color:${hasActualI ? stockLevelColor(actualQtyI) : ''};font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
+          cols += `<td style="color:${opI ? stockLevelColor(startQty, name) : ''};">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.65rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>`;
+          cols += `<td style="color:${clI && endQty !== null ? stockLevelColor(endQty, name) : ''};">${clI ? (endQty ?? '—') : '—'}</td>`;
+          cols += `<td style="color:${hasActualI ? stockLevelColor(actualQtyI, name) : ''};font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${shortQtyI>0?'var(--red)':'var(--text3);'}font-weight:${shortQtyI>0?'800':'400'};">${shortQtyI !== null ? (shortQtyI > 0 ? '-'+shortQtyI : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>`;
         });
         // Status rule: Short shows the exact total short count across shifts
         // (actual physical count vs expected closing, summed); Empty when the
-        // last shift ended with nothing left; OK otherwise.
+        // last shift ended with nothing left; Low Stock when the last known
+        // closing qty is at/below the custom threshold; OK otherwise.
+        const ingThresholdM = getIngredientThreshold(name);
+        const isLastShiftLow = lastEndQty !== null && lastEndQty > 0 && lastEndQty <= ingThresholdM;
         const statusTag = totalShortQty > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ${totalShortQty} ${escHtml(unit)}</span>`
           : (lastEndQty === 0 && everHadStock) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
+          : isLastShiftLow ? `<span class="inv-status-tag inv-tag-low">⚡ Low Stock</span>`
           : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
         cols += `<td style="color:var(--red);font-weight:800;">${totalUsed > 0 ? '-'+totalUsed+' '+escHtml(unit) : '—'}</td>`;
         cols += `<td>${statusTag}</td>`;
@@ -3942,6 +3969,9 @@ function savePriorityStockSettings() {
   savePriorityThresholds(thresholds);
   closeModal('priorityStockModal');
   refreshAlertsBadge();
+  // Re-render inventory so colors and Low Stock badges update immediately
+  // without requiring a page reload.
+  if (typeof renderInventory === 'function') renderInventory();
   showToast('✅ Stock alerts saved!', 'success');
 }
 
@@ -3975,11 +4005,12 @@ document.head.appendChild(styleEl);
 // Shared legend markup explaining the Good/Low/Out stock coloring used by
 // both Print exports below (Daily Inventory Report and Opening Inventory) —
 // kept in one place so the wording/thresholds can't drift between the two.
+// The legend notes that Low Stock thresholds are per-ingredient (custom).
 function buildStockLegendHTML() {
   return `
     <div style="display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin:10px 0 16px;font-size:0.76rem;font-weight:700;">
-      <span style="color:var(--green);">&#9632; Good Stock (&gt;10)</span>
-      <span style="color:var(--orange);">&#9632; Low Stock (1&ndash;10)</span>
+      <span style="color:var(--green);">&#9632; Good Stock (above threshold)</span>
+      <span style="color:var(--orange);">&#9632; Low Stock (at or below threshold)</span>
       <span style="color:var(--red);">&#9632; Out of Stock (0)</span>
     </div>`;
 }
@@ -4270,9 +4301,9 @@ function downloadOpeningInventoryPDF() {
   doc.setFontSize(8);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('Good Stock (>10)', pageWidth / 2 - 130, legendY, { align: 'center' });
+  doc.text('Good Stock (above threshold)', pageWidth / 2 - 130, legendY, { align: 'center' });
   doc.setTextColor(232, 124, 30);
-  doc.text('Low Stock (1-10)', pageWidth / 2, legendY, { align: 'center' });
+  doc.text('Low Stock (at/below threshold)', pageWidth / 2, legendY, { align: 'center' });
   doc.setTextColor(239, 68, 68);
   doc.text('Out of Stock (0)', pageWidth / 2 + 130, legendY, { align: 'center' });
   doc.setTextColor(0);
@@ -4381,9 +4412,9 @@ function downloadInventoryReportPDF() {
   doc.setFontSize(8);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('Good Stock (>10)', pageWidth / 2 - 130, 100, { align: 'center' });
+  doc.text('Good Stock (above threshold)', pageWidth / 2 - 130, 100, { align: 'center' });
   doc.setTextColor(232, 124, 30);
-  doc.text('Low Stock (1-10)', pageWidth / 2, 100, { align: 'center' });
+  doc.text('Low Stock (at/below threshold)', pageWidth / 2, 100, { align: 'center' });
   doc.setTextColor(239, 68, 68);
   doc.text('Out of Stock (0)', pageWidth / 2 + 130, 100, { align: 'center' });
   doc.setTextColor(0);
