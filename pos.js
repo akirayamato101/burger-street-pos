@@ -3471,6 +3471,9 @@ function renderInventory() {
   }
   openingList.innerHTML = openHTML || `<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No opening inventory set.</p>`;
 
+  // Refresh the Alerts button badge (low-stock count)
+  refreshAlertsBadge();
+
 
 
 
@@ -3806,87 +3809,140 @@ function renderInventory() {
 // =================== PRIORITY LOW STOCK ALERTS ===================
 // Stores 5 priority items: [{ name, threshold }]
 // Default items: Burger Patty, Burger Buns, Cheese Slice, Plastic Wrapper, Eggs
+// =================== PRIORITY STOCK ALERTS ===================
+// Thresholds are stored per ingredient name: { [name]: threshold }
+// The ingredient list itself always comes from today's opening inventory —
+// no hardcoded list, whatever the cashier entered is what appears here.
 const PRIORITY_STOCK_KEY = 'burgerStreetPriorityStock';
 
-const PRIORITY_STOCK_DEFAULTS = [
-  { name: 'Burger Patty',    threshold: 10 },
-  { name: 'Burger Buns',     threshold: 10 },
-  { name: 'Cheese Slice',    threshold: 10 },
-  { name: 'Plastic Wrapper', threshold: 10 },
-  { name: 'Eggs',            threshold: 10 },
-];
-
-function loadPriorityStock() {
+function loadPriorityThresholds() {
   try {
     const s = localStorage.getItem(PRIORITY_STOCK_KEY);
     if (s) return JSON.parse(s);
   } catch (e) {}
-  return PRIORITY_STOCK_DEFAULTS.map(d => ({ ...d }));
+  return {}; // { 'Burger Patty': 10, 'Burger Buns': 10, ... }
 }
 
-function savePriorityStock(list) {
-  try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(list)); } catch (e) {}
+function savePriorityThresholds(map) {
+  try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(map)); } catch (e) {}
 }
 
-// Open the Priority Stock Settings modal
-function openPriorityStockSettings() {
-  const priorities = loadPriorityStock();
-  const container = document.getElementById('priorityStockSettingsList');
-  if (!container) return;
-
-  // Get ingredient name suggestions from template + today's inventory
-  const tpl = loadIngredientTemplate();
-  const tplNames = (tpl.ingredients || []).map(i => i.name);
+// Returns the live remaining stock for each opening ingredient in the active shift.
+function getPriorityStockStatus() {
+  const thresholds = loadPriorityThresholds();
   const dateKey = getTodayInvKey();
   const data = loadInventoryData();
   const activeShift = getActiveShift(dateKey, data);
-  const todayNames = (activeShift?.opening?.ingredients || []).map(i => i.name);
-  const allNames = [...new Set([...todayNames, ...tplNames,
-    'Burger Patty','Burger Buns','Cheese Slice','Plastic Wrapper','Eggs'])];
+  const openIngs = activeShift?.opening?.ingredients || [];
+  const isActiveToday = dateKey === getLocalDateKey();
 
-  // Inject datalist for ingredient name autocomplete
-  const existingDl = document.getElementById('prioritySuggestList');
-  if (existingDl) existingDl.remove();
-  const dl = document.createElement('datalist');
-  dl.id = 'prioritySuggestList';
-  allNames.forEach(n => { const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
-  document.body.appendChild(dl);
+  return openIngs.map(ing => {
+    const name      = ing.name || '';
+    const unit      = ing.unit || 'pcs';
+    const opened    = ing.qty || 0;
+    const used      = ing.usedQty || 0;
+    const remaining = isActiveToday ? Math.max(0, opened - used) : opened;
+    const threshold = thresholds[name.toLowerCase()] ?? null; // null = no alert set
+    const isLow     = threshold !== null && remaining <= threshold;
+    const isOut     = remaining === 0;
+    return { name, unit, remaining, threshold, isLow, isOut };
+  });
+}
 
-  container.innerHTML = priorities.map((p, idx) => `
-    <div style="background:var(--bg2);border-radius:10px;padding:12px 14px;border:1px solid var(--border);">
-      <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">PRIORITY ${idx + 1}</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <input type="text" id="ps_name_${idx}" value="${escHtml(p.name)}" placeholder="Ingredient name"
-          class="input-field" style="flex:1;min-width:140px;font-size:0.88rem;padding:7px 10px;"
-          list="prioritySuggestList" />
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-          <span style="font-size:0.78rem;color:var(--text3);font-weight:700;white-space:nowrap;">Alert when ≤</span>
-          <input type="number" id="ps_thr_${idx}" value="${p.threshold}" min="1" max="9999" step="1"
-            class="input-field"
-            style="width:72px;font-size:1rem;font-weight:800;text-align:center;padding:7px 8px;
-                   color:var(--orange);border-color:rgba(232,124,30,0.5);"
-            oninput="this.value=Math.max(1,parseInt(this.value)||1)" />
-          <span style="font-size:0.78rem;color:var(--text3);font-weight:700;">pcs</span>
+// Updates the 🚨 Alerts button badge — called after renderInventory and after saves.
+function refreshAlertsBadge() {
+  const btn = document.getElementById('btnPriorityAlerts');
+  if (!btn) return;
+  const items = getPriorityStockStatus();
+  const alertCount = items.filter(i => i.isLow || i.isOut).length;
+  // Remove any existing badge
+  const old = btn.querySelector('.alert-badge-dot');
+  if (old) old.remove();
+  if (alertCount > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'alert-badge-dot';
+    badge.textContent = alertCount;
+    badge.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;' +
+      'background:var(--red);color:#fff;border-radius:20px;font-size:0.65rem;font-weight:800;' +
+      'padding:1px 6px;margin-left:4px;vertical-align:middle;line-height:1.4;';
+    btn.appendChild(badge);
+  }
+}
+
+// Opens the Alerts modal — list is built from today's opening inventory ingredients.
+function openPriorityStockSettings() {
+  const container = document.getElementById('priorityStockSettingsList');
+  if (!container) return;
+
+  const thresholds = loadPriorityThresholds();
+  const dateKey = getTodayInvKey();
+  const data = loadInventoryData();
+  const activeShift = getActiveShift(dateKey, data);
+  const openIngs = activeShift?.opening?.ingredients || [];
+  const isActiveToday = dateKey === getLocalDateKey();
+
+  if (!openIngs.length) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:24px 0;color:var(--text3);">
+        <div style="font-size:2rem;margin-bottom:8px;">📦</div>
+        <div style="font-size:0.88rem;">No opening inventory set yet.<br>Set today's Opening Inventory first, then configure alerts here.</div>
+      </div>`;
+    document.getElementById('priorityStockModal').classList.remove('hidden');
+    return;
+  }
+
+  container.innerHTML = openIngs.map((ing, idx) => {
+    const name      = ing.name || '';
+    const unit      = ing.unit || 'pcs';
+    const opened    = ing.qty || 0;
+    const used      = ing.usedQty || 0;
+    const remaining = isActiveToday ? Math.max(0, opened - used) : opened;
+    const threshold = thresholds[name.toLowerCase()] ?? '';
+    const stockColor = stockLevelColor(remaining);
+
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
+                  background:var(--bg2);border-radius:10px;border:1px solid var(--border);flex-wrap:wrap;">
+        <div style="flex:1;min-width:120px;">
+          <div style="font-weight:800;font-size:0.9rem;">${escHtml(name)}</div>
+          <div style="font-size:0.72rem;margin-top:2px;">
+            <span style="color:${stockColor};font-weight:800;">${remaining} ${escHtml(unit)}</span>
+            <span style="color:var(--text3);"> remaining</span>
+          </div>
         </div>
-      </div>
-    </div>
-  `).join('');
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+          <span style="font-size:0.75rem;color:var(--text3);font-weight:700;white-space:nowrap;">Alert when ≤</span>
+          <input type="number" id="ps_thr_${idx}" data-name="${escHtml(name)}"
+            value="${threshold}" min="1" max="9999" step="1" placeholder="off"
+            class="input-field"
+            style="width:68px;font-size:0.95rem;font-weight:800;text-align:center;padding:6px 8px;
+                   color:var(--orange);border-color:rgba(232,124,30,0.45);"
+            oninput="this.value=this.value===''?'':Math.max(1,parseInt(this.value)||1)" />
+          <span style="font-size:0.75rem;color:var(--text3);font-weight:700;">${escHtml(unit)}</span>
+        </div>
+      </div>`;
+  }).join('');
 
   document.getElementById('priorityStockModal').classList.remove('hidden');
 }
 
 function savePriorityStockSettings() {
-  const priorities = loadPriorityStock().map((p, idx) => {
-    const nameEl = document.getElementById(`ps_name_${idx}`);
-    const thrEl  = document.getElementById(`ps_thr_${idx}`);
-    const name      = nameEl ? nameEl.value.trim() : p.name;
-    const threshold = thrEl  ? (Math.max(1, parseInt(thrEl.value) || 1)) : p.threshold;
-    return { name: name || p.name, threshold };
+  const thresholds = loadPriorityThresholds();
+  // Walk every threshold input in the modal and save its value
+  document.querySelectorAll('[id^="ps_thr_"]').forEach(el => {
+    const name = el.dataset.name || '';
+    if (!name) return;
+    const raw = el.value.trim();
+    if (raw === '' || isNaN(parseInt(raw))) {
+      delete thresholds[name.toLowerCase()]; // blank = alert off
+    } else {
+      thresholds[name.toLowerCase()] = Math.max(1, parseInt(raw));
+    }
   });
-  savePriorityStock(priorities);
+  savePriorityThresholds(thresholds);
   closeModal('priorityStockModal');
-  renderInventory();
-  showToast('✅ Priority stock alerts saved!', 'success');
+  refreshAlertsBadge();
+  showToast('✅ Stock alerts saved!', 'success');
 }
 
 // =================== PRINT ===================
