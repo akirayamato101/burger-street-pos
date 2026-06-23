@@ -1415,6 +1415,19 @@ function escHtml(str) {
   return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Stock-level color rule used throughout the Daily Inventory page: any time
+// an ingredient/supply quantity is shown, color it by how much is left —
+// >10 = green (good stock), 1–10 = orange (running low), 0 = red (empty/out
+// of stock) — so a cashier can tell stock health at a glance without reading
+// the number itself. Negative quantities (shouldn't normally occur, but
+// stock math elsewhere already floors at 0) are treated the same as 0.
+function stockLevelColor(qty) {
+  const n = Number(qty) || 0;
+  if (n <= 0) return 'var(--red)';
+  if (n <= 10) return 'var(--orange)';
+  return 'var(--green)';
+}
+
 // =================== PRODUCT MANAGEMENT ===================
 function refreshProductList() {
   const products = posState.customProducts || [];
@@ -3315,7 +3328,11 @@ function renderInventory() {
         const closeQty = ci ? (ci.closingQty ?? 0) : null;
         const remainingQty = Math.max(0, openQty - (oi.usedQty || 0));
         const displayQty = isThisActiveToday ? remainingQty : openQty;
-        const displayColor = isThisActiveToday && remainingQty <= 0 && openQty > 0 ? 'var(--red)' : 'var(--text3)';
+        // Stock-level rule applied to whichever qty is actually shown here
+        // (closing qty once the shift is closed, otherwise the live/opening
+        // qty) so this preview badge matches the same color logic as the
+        // full Opening/Closing Inventory lists below.
+        const displayColor = stockLevelColor(closeQty !== null ? closeQty : displayQty);
         return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3);border-radius:6px;padding:2px 8px;font-size:0.74rem;white-space:nowrap;">
           <span style="font-weight:700;">${escHtml(oi.name)}</span>
           <span style="color:${displayColor};">${displayQty}${closeQty !== null ? ` → ${closeQty}` : ''} ${escHtml(unit)}</span>
@@ -3395,9 +3412,11 @@ function renderInventory() {
       const used = i.usedQty || 0;
       const remaining = Math.max(0, opened - used);
       const headline = isActiveShiftToday ? remaining : opened;
-      const headlineColor = isActiveShiftToday
-        ? (remaining <= 0 ? 'var(--red)' : (used > 0 ? 'var(--green)' : 'var(--orange)'))
-        : 'var(--orange)';
+      // Stock-level rule: >10 green (good), 1-10 orange (low), 0 red (empty)
+      // — applied to whichever number is actually on screen (live remaining
+      // for today's active shift, plain opening qty otherwise), so the color
+      // always matches the headline number itself.
+      const headlineColor = stockLevelColor(headline);
       return `
       <div class="inv-list-item" style="flex-direction:column;align-items:stretch;gap:2px;">
         <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
@@ -3444,7 +3463,7 @@ function renderInventory() {
             ${hasActual && short > 0 ? `<span style="font-size:0.72rem;color:var(--red);margin-left:6px;">(${short} short — actual count used)</span>` : ''}
             ${hasActual && short < 0 ? `<span style="font-size:0.72rem;color:var(--orange);margin-left:6px;">(${Math.abs(short)} over — actual count used)</span>` : ''}
           </div>
-          <span style="font-weight:800;color:${hasActual && short !== 0 ? 'var(--orange)' : 'var(--green)'};">${effectiveQty} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
+          <span style="font-weight:800;color:${stockLevelColor(effectiveQty)};">${effectiveQty} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(i.unit||'pcs')}</span></span>
         </div>`;
       }).join('');
     }
@@ -3575,10 +3594,10 @@ function renderInventory() {
           : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
         rows += `<tr>
           <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
-          <td style="color:var(--orange);">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.68rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>
-          <td style="color:var(--green);">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
+          <td style="color:${stockLevelColor(startQty)};">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.68rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>
+          <td style="color:${endQty !== null ? stockLevelColor(endQty) : ''};">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty !== null ? (usedQty > 0 ? '-'+usedQty : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
-          <td style="color:var(--orange);font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
+          <td style="color:${hasActual ? stockLevelColor(actualQty) : ''};font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${vColor};font-weight:800;">${vLabel}</td>
           <td>${status}</td></tr>`;
       } else {
@@ -3604,9 +3623,9 @@ function renderInventory() {
           const actualQtyI = hasActualI ? clI.actualQty : null;
           const shortQtyI  = (hasActualI && endQty !== null) ? Math.max(0, endQty - actualQtyI) : null;
           if (shortQtyI !== null && shortQtyI > 0) { totalShorts++; totalShortQty += shortQtyI; }
-          cols += `<td style="color:var(--orange);">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.65rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>`;
-          cols += `<td style="color:var(--green);">${clI ? (endQty ?? '—') : '—'}</td>`;
-          cols += `<td style="color:var(--orange);font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
+          cols += `<td style="color:${opI ? stockLevelColor(startQty) : ''};">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.65rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>`;
+          cols += `<td style="color:${clI && endQty !== null ? stockLevelColor(endQty) : ''};">${clI ? (endQty ?? '—') : '—'}</td>`;
+          cols += `<td style="color:${hasActualI ? stockLevelColor(actualQtyI) : ''};font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${shortQtyI>0?'var(--red)':'var(--text3);'}font-weight:${shortQtyI>0?'800':'400'};">${shortQtyI !== null ? (shortQtyI > 0 ? '-'+shortQtyI : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>`;
         });
