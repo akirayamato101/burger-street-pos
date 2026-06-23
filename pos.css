@@ -1639,3 +1639,160 @@
     }
     .daily-cta-inner { display: flex; align-items: center; gap: 14px; }
     .daily-cta-icon { font-size: 2rem; }
+
+/* ========== IN-PAGE SECTION SIDEBAR ========== */
+/* Pages that use the sidebar layout get this class */
+.page-with-sidebar.active {
+  display: flex !important;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0;
+  padding: 0 !important;
+  height: 100%;
+  overflow: hidden;
+}
+
+.page-sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: var(--sidebar-bg);
+  border-right: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0 24px;
+  gap: 2px;
+  height: 100%;
+  overflow-y: auto;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+}
+
+.page-sidebar::-webkit-scrollbar { width: 3px; }
+.page-sidebar::-webkit-scrollbar-thumb { background: rgba(232,124,30,0.3); border-radius: 3px; }
+
+.page-sidebar-title {
+  font-family: 'Bangers', cursive;
+  font-size: 1rem;
+  color: var(--orange);
+  letter-spacing: 1.5px;
+  padding: 0 16px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  margin-bottom: 8px;
+}
+
+.page-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  color: var(--text3);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: all 0.2s;
+  user-select: none;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-sidebar-item:hover {
+  background: rgba(232,124,30,0.08);
+  color: var(--orange-light);
+  border-left-color: rgba(232,124,30,0.4);
+}
+
+.page-sidebar-item.active {
+  background: rgba(232,124,30,0.15);
+  color: var(--orange);
+  border-left-color: var(--orange);
+}
+
+.page-main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  padding: 24px 24px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Section anchor offset so sticky topbar doesn't cover it */
+.section-anchor {
+  display: block;
+  height: 0;
+  margin-top: -8px;
+  padding-top: 8px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ===== RESPONSIVE: collapse sidebar to top strip on phones ===== */
+@media (max-width: 700px) {
+  .page-with-sidebar.active {
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+
+  .page-sidebar {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 12px;
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .page-sidebar::-webkit-scrollbar { height: 2px; }
+
+  .page-sidebar-title { display: none; }
+
+  .page-sidebar-item {
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 8px 8px 0 0;
+    padding: 8px 12px;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    flex-shrink: 0;
+  }
+
+  .page-sidebar-item.active {
+    border-left: none;
+    border-bottom-color: var(--orange);
+    background: rgba(232,124,30,0.15);
+  }
+
+  .page-main {
+    padding: 16px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (min-width: 701px) and (max-width: 1099px) {
+  .page-sidebar { width: 170px; min-width: 170px; }
+  .page-sidebar-item { font-size: 0.78rem; padding: 9px 13px; }
+}
+
+/* Fix: on mobile the page-with-sidebar must scroll vertically */
+@media (max-width: 700px) {
+  .page-with-sidebar.active {
+    overflow-y: auto !important;
+    height: auto !important;
+  }
+  .page-main {
+    overflow-y: visible;
+    overflow-x: hidden;
+    min-height: auto;
+  }
+}
