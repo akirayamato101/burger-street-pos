@@ -1857,18 +1857,9 @@ function renderCashAdvanceLog() {
           <div style="font-weight:800;color:var(--red);font-size:1rem;">-₱${fmt(a.amount)}</div>
           <div style="font-size:0.78rem;font-weight:700;color:var(--text2);">${dateStr}</div>
           <div style="font-size:0.78rem;color:var(--text3);">${timeStr}</div>
-          <button onclick="deleteCashAdvance(${a.id})" style="background:none;border:none;color:var(--red);font-size:0.75rem;cursor:pointer;margin-top:4px;font-weight:700;">🗑 Remove</button>
         </div>
       </div>`;
   }).join('');
-}
-
-function deleteCashAdvance(id) {
-  if (!confirm('Remove this cash advance record?')) return;
-  posState.cashAdvances = (posState.cashAdvances || []).filter(a => a.id !== id);
-  savePos();
-  renderCashAdvanceLog();
-  showToast('Cash advance record removed.', 'success');
 }
 
 function getCashAdvanceTotalToday() {
