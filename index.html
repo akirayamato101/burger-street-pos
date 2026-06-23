@@ -468,18 +468,8 @@
                 <button class="btn btn-outline btn-sm" onclick="printOpeningInventory()" title="Print Opening Inventory">🖨️ Print</button>
                 <button class="btn btn-outline btn-sm" onclick="downloadOpeningInventoryPDF()" title="Save Opening Inventory as PDF">📄 PDF</button>
                 <button class="btn btn-outline btn-sm" onclick="openInvModal('opening')">✏️ Edit</button>
+                <button class="btn btn-outline btn-sm" onclick="openPriorityStockSettings()" title="Configure priority stock alerts">🚨 Alerts</button>
               </div>
-            </div>
-            <!-- Priority Low Stock Indicator -->
-            <div id="invPriorityStockPanel" style="margin-bottom:14px;display:none;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
-                <div style="display:flex;align-items:center;gap:6px;">
-                  <span style="font-size:0.72rem;font-weight:800;color:var(--red);letter-spacing:1px;text-transform:uppercase;">🚨 Priority Stock Alerts</span>
-                  <span id="invPriorityAlertBadge" style="display:none;background:var(--red);color:#fff;border-radius:20px;padding:1px 8px;font-size:0.68rem;font-weight:800;"></span>
-                </div>
-                <button onclick="openPriorityStockSettings()" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:3px 10px;font-size:0.72rem;font-weight:700;color:var(--text3);cursor:pointer;">⚙️ Configure</button>
-              </div>
-              <div id="invPriorityStockList" style="display:flex;flex-direction:column;gap:6px;"></div>
             </div>
             <div id="invOpeningList"></div>
           </div>

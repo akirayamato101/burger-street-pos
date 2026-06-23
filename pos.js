@@ -3471,8 +3471,8 @@ function renderInventory() {
   }
   openingList.innerHTML = openHTML || `<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No opening inventory set.</p>`;
 
-  // Render priority low stock panel (always shown when opening data exists)
-  renderPriorityStockPanel();
+
+
 
   // ── Closing list ─────────────────────────────────────────────────────────
   const closingList = document.getElementById('invClosingList');
@@ -3826,89 +3826,6 @@ function loadPriorityStock() {
 
 function savePriorityStock(list) {
   try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(list)); } catch (e) {}
-}
-
-// Called from renderInventory() after the opening list is built.
-// Reads today's active shift stock and renders per-item alert pills.
-function renderPriorityStockPanel() {
-  const panel = document.getElementById('invPriorityStockPanel');
-  const list  = document.getElementById('invPriorityStockList');
-  const badge = document.getElementById('invPriorityAlertBadge');
-  if (!panel || !list) return;
-
-  const priorities = loadPriorityStock();
-
-  // Get live remaining stock from today's active shift
-  const dateKey = getTodayInvKey();
-  const data = loadInventoryData();
-  const activeShift = getActiveShift(dateKey, data);
-  const openIngs = activeShift?.opening?.ingredients || [];
-  const isActiveShiftToday = dateKey === getLocalDateKey();
-
-  let alertCount = 0;
-  const rows = priorities.map(p => {
-    const ing = openIngs.find(i => (i.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase());
-
-    if (!ing) {
-      // Not in today's inventory at all
-      return { name: p.name, threshold: p.threshold, remaining: null, status: 'not-set' };
-    }
-
-    const opened = ing.qty || 0;
-    const used   = ing.usedQty || 0;
-    const remaining = isActiveShiftToday ? Math.max(0, opened - used) : opened;
-    const status = remaining === 0 ? 'out' : remaining <= p.threshold ? 'low' : 'ok';
-    if (status === 'out' || status === 'low') alertCount++;
-    return { name: p.name, unit: ing.unit || 'pcs', threshold: p.threshold, remaining, status };
-  });
-
-  // Show/hide panel — always show so the cashier can see the 5 priorities
-  panel.style.display = 'block';
-
-  // Badge
-  if (alertCount > 0) {
-    badge.style.display = 'inline-block';
-    badge.textContent = alertCount + ' LOW';
-  } else {
-    badge.style.display = 'none';
-  }
-
-  list.innerHTML = rows.map(r => {
-    let bg, borderColor, dot, label, qtyText;
-    if (r.status === 'not-set') {
-      bg = 'rgba(255,255,255,0.03)'; borderColor = 'var(--border)';
-      dot = '⚪'; label = 'Not in inventory';
-      qtyText = '<span style="color:var(--text3);font-size:0.78rem;">—</span>';
-    } else if (r.status === 'out') {
-      bg = 'rgba(239,68,68,0.1)'; borderColor = 'rgba(239,68,68,0.5)';
-      dot = '🔴'; label = 'OUT OF STOCK';
-      qtyText = `<span style="color:var(--red);font-weight:800;font-size:1rem;">0 ${escHtml(r.unit||'pcs')}</span>`;
-    } else if (r.status === 'low') {
-      bg = 'rgba(232,124,30,0.1)'; borderColor = 'rgba(232,124,30,0.5)';
-      dot = '🟠'; label = `LOW — threshold: ≤${r.threshold}`;
-      qtyText = `<span style="color:var(--orange);font-weight:800;font-size:1rem;">${r.remaining} ${escHtml(r.unit||'pcs')}</span>`;
-    } else {
-      bg = 'rgba(16,185,129,0.07)'; borderColor = 'rgba(16,185,129,0.3)';
-      dot = '🟢'; label = 'Good stock';
-      qtyText = `<span style="color:var(--green);font-weight:800;font-size:1rem;">${r.remaining} ${escHtml(r.unit||'pcs')}</span>`;
-    }
-
-    return `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;
-                  padding:8px 12px;border-radius:10px;border:1px solid ${borderColor};
-                  background:${bg};flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-          <span style="font-size:1rem;">${dot}</span>
-          <div>
-            <div style="font-weight:800;font-size:0.88rem;">${escHtml(r.name)}</div>
-            <div style="font-size:0.7rem;color:var(--text3);font-weight:700;">${label}</div>
-          </div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;">
-          ${qtyText}
-        </div>
-      </div>`;
-  }).join('');
 }
 
 // Open the Priority Stock Settings modal
