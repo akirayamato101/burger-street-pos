@@ -3977,9 +3977,8 @@ function savePriorityStockSettings() {
   savePriorityThresholds(thresholds);
   closeModal('priorityStockModal');
   refreshAlertsBadge();
-  // Re-render inventory so colors and Low Stock badges update immediately
-  // without requiring a page reload.
-  if (typeof renderInventory === 'function') renderInventory();
+  // Re-render inventory so colors and Low Stock badges update immediately.
+  renderInventory();
   showToast('✅ Stock alerts saved!', 'success');
 }
 
