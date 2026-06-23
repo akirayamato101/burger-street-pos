@@ -1425,6 +1425,7 @@ function escHtml(str) {
 // Defined here — above getIngredientThreshold — so PRIORITY_STOCK_KEY (a const,
 // not hoisted) is always initialised before any threshold lookup runs.
 const PRIORITY_STOCK_KEY = 'burgerStreetPriorityStock';
+const GLOBAL_ALERT_KEY   = 'burgerStreetGlobalAlertThreshold';
 
 function loadPriorityThresholds() {
   try {
@@ -1438,6 +1439,26 @@ function savePriorityThresholds(map) {
   try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(map)); } catch (e) {}
 }
 
+// Global alert threshold — single value that applies to ALL ingredients
+// unless overridden by a per-ingredient threshold.
+function loadGlobalAlertThreshold() {
+  try {
+    const v = localStorage.getItem(GLOBAL_ALERT_KEY);
+    if (v !== null && v !== '') return Number(v);
+  } catch (e) {}
+  return null; // null = not set
+}
+
+function saveGlobalAlertThreshold(val) {
+  try {
+    if (val === null || val === '') {
+      localStorage.removeItem(GLOBAL_ALERT_KEY);
+    } else {
+      localStorage.setItem(GLOBAL_ALERT_KEY, String(Math.max(1, Number(val))));
+    }
+  } catch (e) {}
+}
+
 // Returns the custom alert threshold for a named ingredient, or null if no
 // alert has been configured for it. Callers that need a numeric fallback for
 // coloring purposes should use getIngredientThresholdOrDefault() instead.
@@ -1448,11 +1469,14 @@ function getIngredientThreshold(name) {
   return (custom !== undefined && custom !== null) ? Number(custom) : null;
 }
 
-// Like getIngredientThreshold but returns 10 when no custom alert is set,
-// used by stockLevelColor/stockLevelLabel where a numeric value is always needed.
+// Like getIngredientThreshold but returns the global alert threshold (or 10)
+// when no per-ingredient alert is set — used by stockLevelColor/stockLevelLabel
+// where a numeric value is always needed.
 function getIngredientThresholdOrDefault(name) {
   const t = getIngredientThreshold(name);
-  return t !== null ? t : 10;
+  if (t !== null) return t;
+  const g = loadGlobalAlertThreshold();
+  return g !== null ? g : 10;
 }
 
 // Accepts an optional ingredient name so it can look up a per-ingredient
@@ -3474,20 +3498,19 @@ function renderInventory() {
     // headline; other shifts/dates show the plain opening qty since nothing
     // is being live-deducted from them.
     const isActiveShiftToday = isToday && viewIdx === shiftCount - 1;
-    openHTML += openIngredients.map(i => {
+    const globalAlertThreshold = loadGlobalAlertThreshold();
+    openHTML += openIngredients.map((i, idx) => {
       const unit = escHtml(i.unit || 'pcs');
       const opened = i.qty || 0;
       const used = i.usedQty || 0;
       const remaining = Math.max(0, opened - used);
       const headline = isActiveShiftToday ? remaining : opened;
-      // Stock-level color now respects the per-ingredient custom threshold
-      // set in Priority Stock Alerts (falls back to 10 if none is set).
-      const headlineColor = stockLevelColor(headline, i.name);
-      // Only show the Low Stock badge when the user has explicitly configured
-      // an alert threshold for this ingredient — getIngredientThreshold returns
-      // null when no alert is set, so we never badge items that were never configured.
-      const customThreshold = getIngredientThreshold(i.name);
-      const isLowStock = customThreshold !== null && headline > 0 && headline <= customThreshold;
+      // Top-5 ingredients turn orange when below the global alert threshold.
+      // Per-ingredient thresholds still apply for all items via stockLevelColor.
+      const isTopFive = idx < 5;
+      const isLowStock = isTopFive && globalAlertThreshold !== null && headline > 0 && headline < globalAlertThreshold;
+      // If this is a top-5 low-stock item, force orange; otherwise use normal stock color.
+      const headlineColor = isLowStock ? 'var(--orange)' : stockLevelColor(headline, i.name);
       return `
       <div class="inv-list-item" style="flex-direction:column;align-items:stretch;gap:2px;">
         <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
@@ -3871,14 +3894,19 @@ function getPriorityStockStatus() {
   const openIngs = activeShift?.opening?.ingredients || [];
   const isActiveToday = dateKey === getLocalDateKey();
 
-  return openIngs.map(ing => {
+  const globalThreshold = loadGlobalAlertThreshold();
+  return openIngs.map((ing, idx) => {
     const name      = ing.name || '';
     const unit      = ing.unit || 'pcs';
     const opened    = ing.qty || 0;
     const used      = ing.usedQty || 0;
     const remaining = isActiveToday ? Math.max(0, opened - used) : opened;
-    const threshold = thresholds[name.toLowerCase()] ?? null; // null = no alert set
-    const isLow     = threshold !== null && remaining <= threshold;
+    const perIngThreshold = thresholds[name.toLowerCase()] ?? null;
+    // Global threshold only applies to the top 5 ingredients
+    const isTopFive = idx < 5;
+    const threshold = perIngThreshold !== null ? perIngThreshold
+                    : (isTopFive ? globalThreshold : null);
+    const isLow     = threshold !== null && remaining > 0 && remaining < threshold;
     const isOut     = remaining === 0;
     return { name, unit, remaining, threshold, isLow, isOut };
   });
@@ -3926,55 +3954,71 @@ function openPriorityStockSettings() {
     return;
   }
 
-  container.innerHTML = openIngs.map((ing, idx) => {
-    const name      = ing.name || '';
-    const unit      = ing.unit || 'pcs';
-    const opened    = ing.qty || 0;
-    const used      = ing.usedQty || 0;
-    const remaining = isActiveToday ? Math.max(0, opened - used) : opened;
-    const threshold = thresholds[name.toLowerCase()] ?? '';
-    const stockColor = stockLevelColor(remaining);
+  const globalVal = loadGlobalAlertThreshold();
+  const top5 = openIngs.slice(0, 5);
 
-    return `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
-                  background:var(--bg2);border-radius:10px;border:1px solid var(--border);flex-wrap:wrap;">
-        <div style="flex:1;min-width:120px;">
-          <div style="font-weight:800;font-size:0.9rem;">${escHtml(name)}</div>
-          <div style="font-size:0.72rem;margin-top:2px;">
-            <span style="color:${stockColor};font-weight:800;">${remaining} ${escHtml(unit)}</span>
-            <span style="color:var(--text3);"> remaining</span>
+  // Single global threshold input + top-5 preview
+  let html = `
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;
+                background:rgba(232,124,30,0.08);border-radius:12px;
+                border:1.5px solid rgba(232,124,30,0.45);flex-wrap:wrap;margin-bottom:16px;">
+      <div style="flex:1;min-width:140px;">
+        <div style="font-weight:800;font-size:0.95rem;color:var(--orange);">🔔 Alert Count</div>
+        <div style="font-size:0.75rem;color:var(--text3);margin-top:3px;">Top 5 ingredients turn 🟠 orange when their count is below this number.</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        <span style="font-size:0.8rem;color:var(--text3);font-weight:700;white-space:nowrap;">Below</span>
+        <input type="number" id="ps_global_thr"
+          value="${globalVal !== null ? globalVal : ''}" min="1" max="9999" step="1" placeholder="e.g. 30"
+          class="input-field"
+          style="width:80px;font-size:1.1rem;font-weight:800;text-align:center;padding:7px 8px;
+                 color:var(--orange);border-color:rgba(232,124,30,0.6);background:rgba(232,124,30,0.06);"
+          oninput="this.value=this.value===''?'':Math.max(1,parseInt(this.value)||1)" />
+      </div>
+    </div>
+    <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">📋 Top 5 Ingredients Affected</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">`;
+
+  if (top5.length === 0) {
+    html += `<div style="font-size:0.85rem;color:var(--text3);text-align:center;padding:8px 0;">No ingredients in opening inventory.</div>`;
+  } else {
+    top5.forEach((ing, idx) => {
+      const name      = ing.name || '';
+      const unit      = ing.unit || 'pcs';
+      const opened    = ing.qty || 0;
+      const used      = ing.usedQty || 0;
+      const remaining = isActiveToday ? Math.max(0, opened - used) : opened;
+      const willAlert = globalVal !== null && remaining > 0 && remaining < globalVal;
+      const stockColor = willAlert ? 'var(--orange)' : stockLevelColor(remaining, name);
+      html += `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;
+                    background:${willAlert ? 'rgba(232,124,30,0.07)' : 'var(--bg2)'};
+                    border-radius:10px;border:1px solid ${willAlert ? 'rgba(232,124,30,0.35)' : 'var(--border)'};justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:0.7rem;font-weight:800;color:var(--text3);background:var(--bg3);border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;">${idx + 1}</span>
+            <span style="font-weight:700;font-size:0.9rem;">${escHtml(name)}</span>
           </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-          <span style="font-size:0.75rem;color:var(--text3);font-weight:700;white-space:nowrap;">Alert when ≤</span>
-          <input type="number" id="ps_thr_${idx}" data-name="${escHtml(name)}"
-            value="${threshold}" min="1" max="9999" step="1" placeholder="off"
-            class="input-field"
-            style="width:68px;font-size:0.95rem;font-weight:800;text-align:center;padding:6px 8px;
-                   color:var(--orange);border-color:rgba(232,124,30,0.45);"
-            oninput="this.value=this.value===''?'':Math.max(1,parseInt(this.value)||1)" />
-          <span style="font-size:0.75rem;color:var(--text3);font-weight:700;">${escHtml(unit)}</span>
-        </div>
-      </div>`;
-  }).join('');
+          <div style="display:flex;align-items:center;gap:6px;">
+            ${willAlert ? `<span style="font-size:0.68rem;font-weight:800;color:var(--orange);background:rgba(232,124,30,0.13);border:1px solid rgba(232,124,30,0.35);border-radius:6px;padding:1px 6px;">⚡ Low</span>` : ''}
+            <span style="font-weight:800;color:${stockColor};">${remaining} <span style="font-size:0.72rem;color:var(--text3);">${escHtml(unit)}</span></span>
+          </div>
+        </div>`;
+    });
+  }
+
+  html += `</div>`;
+  container.innerHTML = html;
 
   document.getElementById('priorityStockModal').classList.remove('hidden');
 }
 
 function savePriorityStockSettings() {
-  const thresholds = loadPriorityThresholds();
-  // Walk every threshold input in the modal and save its value
-  document.querySelectorAll('[id^="ps_thr_"]').forEach(el => {
-    const name = el.dataset.name || '';
-    if (!name) return;
-    const raw = el.value.trim();
-    if (raw === '' || isNaN(parseInt(raw))) {
-      delete thresholds[name.toLowerCase()]; // blank = alert off
-    } else {
-      thresholds[name.toLowerCase()] = Math.max(1, parseInt(raw));
-    }
-  });
-  savePriorityThresholds(thresholds);
+  // Save the single global threshold
+  const globalInput = document.getElementById('ps_global_thr');
+  if (globalInput) {
+    const gv = globalInput.value.trim();
+    saveGlobalAlertThreshold(gv === '' || isNaN(parseInt(gv)) ? null : Math.max(1, parseInt(gv)));
+  }
   closeModal('priorityStockModal');
   refreshAlertsBadge();
   // Re-render inventory so colors and Low Stock badges update immediately.
