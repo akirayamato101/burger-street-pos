@@ -3934,17 +3934,54 @@ function printOpeningInventory() {
 }
 
 // Reads the live #invOpeningList DOM and converts it into a simple two-column
-// (Item | Qty/Amount) row list for autoTable — the live list uses free-form
-// styled divs (not a <table>), so this walks .inv-list-item rows directly
-// rather than reusing getInventoryReportTablesGrouped(), which expects an
-// actual <table> to scrape.
+// (Item | Qty/Amount) row list for autoTable. The live list isn't a uniform
+// <table> — it mixes two different .inv-list-item shapes:
+//   - Cash rows: <div class="inv-list-item"><span>name</span><span>amount</span></div>
+//     (name/value are direct children)
+//   - Ingredient rows: <div class="inv-list-item"><div class="flex-row">
+//       <div>name</div><span>qty</span></div> ...extra sold/out-of-stock divs... </div>
+//     (name/value are nested one level down, inside the first child row, and
+//     there may be additional sibling divs for "sold"/"out of stock" notes
+//     that must NOT be picked up as the value column)
+// so each row's own name+value pair is read from whichever level actually
+// holds two label/value children, instead of always trusting top-level
+// children — which is what silently dropped every ingredient row before
+// (their headline qty isn't a direct child of .inv-list-item at all).
 function getOpeningInventoryRowsForPDF() {
   const openingList = document.getElementById('invOpeningList');
   const rows = [];
   if (!openingList) return rows;
   openingList.querySelectorAll('.inv-list-item').forEach(item => {
-    const cells = [...item.children].map(c => c.textContent.replace(/\s+/g, ' ').trim());
-    if (cells.length >= 2) rows.push([cells[0], cells[cells.length - 1]]);
+    // Ingredient rows nest the actual name/qty pair inside the row's FIRST
+    // CHILD (a flex div with exactly 2 children: name-block, qty-block), and
+    // may have extra sibling divs after it (sold / out-of-stock notes) that
+    // must be ignored. Cash rows have no such wrapper — the name/value pair
+    // is the row's own direct children. Detect which shape this is by
+    // checking the first child itself, not the row's total child count
+    // (a row can have 1, 2, or 3 children depending on sold/out-of-stock
+    // notes, so child count alone doesn't reliably distinguish the shapes).
+    const firstChild = item.firstElementChild;
+    const pairHolder = (firstChild && firstChild.children.length === 2) ? firstChild : item;
+    const cellText = el => {
+      // Some cells (e.g. the ingredient name block) are built from two
+      // adjacent <span>s with no whitespace text node between them in the
+      // markup — visual spacing comes from CSS margin only — so plain
+      // textContent runs them together as "Burger Pattiespcs". Other cells
+      // (e.g. the qty block "40 <span>pcs</span>") DO have a real space
+      // character before the nested element, so textContent is already
+      // correct there. Detect the "no separator" case specifically: every
+      // child node is an element (no loose whitespace text in between) AND
+      // there's more than one of them — only then re-join with an inserted
+      // space; otherwise trust textContent as-is.
+      const onlyElementChildren = el.childNodes.length > 1 &&
+        [...el.childNodes].every(n => n.nodeType === 1);
+      const raw = onlyElementChildren
+        ? [...el.children].map(c => c.textContent).join(' ')
+        : el.textContent;
+      return raw.replace(/\s+/g, ' ').trim();
+    };
+    const cells = [...pairHolder.children].map(cellText);
+    if (cells.length >= 2 && cells[0]) rows.push([cells[0], cells[cells.length - 1]]);
   });
   return rows;
 }
