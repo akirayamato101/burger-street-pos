@@ -664,7 +664,7 @@ function openDeliveryModal(type = 'delivery') {
   // falling back to the master ingredient template for everything else.
   const datalist = document.getElementById('deliveryItemSuggestions');
   if (datalist) {
-    const dateKey = getLocalDateKey();
+    const dateKey = getTodayInvKey();
     const invData = loadInventoryData();
     const todayShifts = invData[dateKey]?.shifts || [];
     const activeShift = todayShifts[todayShifts.length - 1];
@@ -699,7 +699,7 @@ function saveDelivery() {
   if (!item) { showToast('Please enter an item name.', 'error'); return; }
   if (!qty) { showToast('Please enter a quantity.', 'error'); return; }
 
-  const dateKey = getLocalDateKey();
+  const dateKey = getLocalDateKey(); // FIXED: always use real today, not the date picker value
   const invData = loadInventoryData();
 
   // For pull-outs, check current stock so the cashier can't silently push an
