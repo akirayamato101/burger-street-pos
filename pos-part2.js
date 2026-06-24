@@ -790,66 +790,39 @@ function saveDelivery() {
     // (A pull-out on an item with no existing stock record is logged but has
     // nothing to subtract from — the warning above already covered this case.)
 
-    // ── CRITICAL: keep the closing record in sync with the opening ──
-    // When a stock movement is saved AFTER the shift has already been closed,
-    // opening.qty is updated above, but seedOpeningFromLastClosing (which seeds
-    // tomorrow's opening) reads from closing.closingQty — NOT opening.qty.
-    // Without this sync, a post-closing pull-out (e.g. remove 20 patties from
-    // the 80 remaining after closing) is invisible to tomorrow's opening, which
-    // would seed from the stale closingQty and restore the wrong number.
-    // We only sync the one ingredient that was just moved, and only if the
-    // closing record already exists for this shift.
+    // FIX: When a pull-out/delivery happens AFTER the closing is already saved,
+    // also update closing.closingQty by the same delta so tomorrow's opening
+    // seeds from the correct number (seedOpeningFromLastClosing reads closingQty,
+    // not opening.qty, so without this the pull-out is invisible to next day).
     if (movement.postClosing && activeShift.closing && activeShift.closing.ingredients) {
       const closingIng = activeShift.closing.ingredients.find(
         i => i.name.trim().toLowerCase() === item.toLowerCase()
       );
       if (closingIng) {
-        // Apply the same delta to closingQty, floored at 0
         closingIng.closingQty = Math.max(0, (closingIng.closingQty ?? 0) + delta);
-        // If the cashier had entered an actual physical recount, adjust that too
-        // so the recount stays consistent with the movement.
         if (closingIng.actualQty !== null && closingIng.actualQty !== undefined && closingIng.actualQty !== '') {
           closingIng.actualQty = Math.max(0, (parseInt(closingIng.actualQty, 10) || 0) + delta);
         }
       } else if (type === 'delivery') {
-        // New ingredient delivered after closing — add it to the closing record too
-        // so it flows forward to tomorrow's opening.
-        activeShift.closing.ingredients.push({
-          name: item, unit: unit, closingQty: qtyNum, actualQty: null
-        });
+        activeShift.closing.ingredients.push({ name: item, unit: unit, closingQty: qtyNum, actualQty: null });
       }
     }
 
     saveInventoryData(invData);
 
-    // ── INVALIDATE FUTURE AUTO-SEEDED OPENINGS ──
-    // Problem: seedOpeningFromLastClosing() saves the seeded opening to storage
-    // and then early-returns on all future calls (guard: "if opening exists, return").
-    // This means if the cashier visited tomorrow before doing today's pull-out,
-    // tomorrow's opening is already locked in storage with the OLD qty (100),
-    // and the pull-out's change to today's opening.qty (80) is never seen there.
-    //
-    // Fix: after every stock movement, scan all future dates whose opening was
-    // auto-seeded from today. Delete those seeded openings so they recompute from
-    // scratch next time the cashier views them — picking up the corrected qty.
-    // Only openings where seededFrom === today are deleted; manually-entered
-    // openings (seededFrom is null/undefined) are never touched.
+    // FIX: If a future date was already auto-seeded from today before this
+    // pull-out happened, its opening is now stale. Delete it so it re-seeds
+    // fresh on next view and picks up the corrected qty.
     const futureDates = Object.keys(invData).filter(d => d > dateKey).sort();
     let invChanged = false;
     for (const futureDate of futureDates) {
       const futureShifts = invData[futureDate] && invData[futureDate].shifts;
       if (!futureShifts || !futureShifts.length) continue;
-      // Only look at the first shift of each future date — that is the one
-      // auto-seeded from the previous day closing/opening.
       const firstShift = futureShifts[0];
       if (!firstShift.opening) continue;
       const sf = firstShift.opening.seededFrom;
-      // Delete if seededFrom points back to today or was a same-day carry-over.
-      // Stop at the first future date seeded from a different source — cascading
-      // further would risk deleting openings unrelated to today's movement.
       if (sf === dateKey || sf === 'previous shift') {
         delete firstShift.opening;
-        // If the shift only had this opening (no closing), clean up the empty record.
         if (!firstShift.closing) {
           futureShifts.splice(0, 1);
           if (!futureShifts.length) delete invData[futureDate];

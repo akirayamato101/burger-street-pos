@@ -465,11 +465,9 @@ function seedOpeningFromLastClosing(dateKey, invData) {
       seededFrom
     };
   } else if (lastOpeningFallback) {
-    // Fallback: cashier never closed — carry the opening amounts forward as-is
-    // so inventory values are not lost. Only copy the clean fields (name, unit,
-    // qty) — never carry usedQty, closingQty, or actualQty into the next day's
-    // opening, as those belong to the previous shift's tracking state and would
-    // make tomorrow start with phantom "already used" stock.
+    // Fallback: cashier never closed — carry the opening forward.
+    // FIX: Only copy clean fields — never carry usedQty/closingQty/actualQty
+    // into the next day's opening as those are previous-shift tracking state.
     newOpening = {
       ingredients: (lastOpeningFallback.ingredients || []).map(i => ({
         name: i.name, unit: i.unit, qty: (i.qty ?? 0)
@@ -639,25 +637,20 @@ let invAmounts    = []; // { name, amount }               — peso-based (openin
 
 // ---- OPEN MODAL ----
 function openInvModal(type) {
-  // Block closing inventory on past dates or non-active shifts.
-  // The button should already be hidden by renderInventory(), but this
-  // guard catches any edge-case path (e.g. keyboard shortcut, deep link).
+  // FIX: Block closing inventory on past dates or non-active shifts.
   if (type === 'closing') {
     const viewingDate = getTodayInvKey();
     const actualToday = getLocalDateKey();
     if (viewingDate !== actualToday) {
-      showToast('⛔ Closing inventory can only be set for today. Navigate back to today\'s date first.', 'error');
+      showToast('⛔ Closing inventory can only be set for today.', 'error');
       return;
     }
-    // Also block if the user is viewing a previous shift on today (not the last/active one)
-    const data = loadInventoryData();
-    const dayShifts = getDayShifts(viewingDate, data);
-    const shiftCount = dayShifts.length;
-    const viewIdx = (currentShiftIndex < 0 || currentShiftIndex >= shiftCount)
-      ? shiftCount - 1
-      : currentShiftIndex;
-    if (viewIdx !== shiftCount - 1) {
-      showToast('⛔ That shift is already closed. You can only set closing inventory for the current active shift.', 'error');
+    const _d = loadInventoryData();
+    const _shifts = getDayShifts(viewingDate, _d);
+    const _viewIdx = (currentShiftIndex < 0 || currentShiftIndex >= _shifts.length)
+      ? _shifts.length - 1 : currentShiftIndex;
+    if (_viewIdx !== _shifts.length - 1) {
+      showToast('⛔ That shift is already closed.', 'error');
       return;
     }
   }
@@ -898,15 +891,11 @@ function saveInvModal() {
   const cashierName = activeCashier?.name || BIZ_NAME;
 
   if (invModalType === 'opening') {
+    // FIX: Strip stale tracking fields (usedQty, closingQty, actualQty) that
+    // belong to the previous shift. Saving them into the new opening causes
+    // phantom "already used" stock before any sales happen today.
     const ings = invIngredients
       .filter(i => i.name && i.name.trim())
-      // Strip any stale tracking fields that belong to the previous shift/day.
-      // invIngredients is loaded with a spread of the existing opening record,
-      // which may carry usedQty (from sales deductions), closingQty, or
-      // actualQty from the prior session. Saving those fields into the new
-      // opening would make the live-remaining calculation start below zero
-      // (usedQty already > 0 before any sale today) and confuse the closing
-      // pre-fill (closingQty would show a stale number from yesterday).
       .map(({ name, unit, qty }) => ({ name, unit, qty: qty ?? 0 }));
     const amts = invAmounts
       .filter(a => a.name && a.name.trim())
@@ -941,10 +930,9 @@ function saveInvModal() {
 
   saveInventoryData(data);
 
-  // When the opening or closing is manually edited, any future dates whose
-  // opening was auto-seeded from today are now stale. Invalidate them so they
-  // recompute from scratch on next view, picking up the updated quantities.
-  if (invModalType === 'opening' || invModalType === 'closing') {
+  // FIX: When opening or closing is manually edited, delete any future dates
+  // whose opening was auto-seeded from today so they re-seed with correct values.
+  {
     const futureDates = Object.keys(data).filter(d => d > dateKey).sort();
     let invChanged = false;
     for (const futureDate of futureDates) {
@@ -1129,9 +1117,8 @@ function renderInventory() {
   const btnOpen = document.getElementById('btnSetOpening');
   if (btnOpen) btnOpen.style.display = isToday ? '' : 'none';
 
-  // Show/hide Set Closing button: only visible for today's active (last) shift.
-  // Past dates and past shifts are read-only — hiding the button prevents
-  // accidental closing entries being saved to the wrong date/shift.
+  // FIX: Hide Set Closing button on past dates and past shifts — only show
+  // for today's active (last) shift to prevent accidental past-date saves.
   const isActiveShift = isToday && viewIdx === shiftCount - 1;
   const btnSetClosing = document.getElementById('btnSetClosing');
   if (btnSetClosing) btnSetClosing.style.display = isActiveShift ? '' : 'none';
