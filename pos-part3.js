@@ -636,6 +636,29 @@ let invAmounts    = []; // { name, amount }               — peso-based (openin
 
 // ---- OPEN MODAL ----
 function openInvModal(type) {
+  // Block closing inventory on past dates or non-active shifts.
+  // The button should already be hidden by renderInventory(), but this
+  // guard catches any edge-case path (e.g. keyboard shortcut, deep link).
+  if (type === 'closing') {
+    const viewingDate = getTodayInvKey();
+    const actualToday = getLocalDateKey();
+    if (viewingDate !== actualToday) {
+      showToast('⛔ Closing inventory can only be set for today. Navigate back to today\'s date first.', 'error');
+      return;
+    }
+    // Also block if the user is viewing a previous shift on today (not the last/active one)
+    const data = loadInventoryData();
+    const dayShifts = getDayShifts(viewingDate, data);
+    const shiftCount = dayShifts.length;
+    const viewIdx = (currentShiftIndex < 0 || currentShiftIndex >= shiftCount)
+      ? shiftCount - 1
+      : currentShiftIndex;
+    if (viewIdx !== shiftCount - 1) {
+      showToast('⛔ That shift is already closed. You can only set closing inventory for the current active shift.', 'error');
+      return;
+    }
+  }
+
   invModalType = type;
   const dateKey = getTodayInvKey();
   const data = loadInventoryData();
@@ -1064,6 +1087,13 @@ function renderInventory() {
   // Show/hide Set Opening button (today only)
   const btnOpen = document.getElementById('btnSetOpening');
   if (btnOpen) btnOpen.style.display = isToday ? '' : 'none';
+
+  // Show/hide Set Closing button: only visible for today's active (last) shift.
+  // Past dates and past shifts are read-only — hiding the button prevents
+  // accidental closing entries being saved to the wrong date/shift.
+  const isActiveShift = isToday && viewIdx === shiftCount - 1;
+  const btnSetClosing = document.getElementById('btnSetClosing');
+  if (btnSetClosing) btnSetClosing.style.display = isActiveShift ? '' : 'none';
 
   if (!hasOpening) {
     emptyEl.style.display = 'block';
