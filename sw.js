@@ -3,13 +3,21 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v6';
+const CACHE_NAME = 'burger-pos-v7';
 
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/pos.css',
-  '/pos.js',
+  // Must match the exact URLs (including the ?v=1 cache-busting query string)
+  // that index.html actually requests — the Cache API matches by full URL,
+  // so a precached entry without the query string would never be found by
+  // caches.match() for these requests, leaving the app unable to load its
+  // own code on a first-ever offline launch.
+  '/pos-part1.js?v=1',
+  '/pos-part2.js?v=1',
+  '/pos-part3.js?v=1',
+  '/pos-part4.js?v=1',
   '/manifest.json',
   // Dexie.js from CDN — cache it so app works fully offline
   'https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js',

@@ -765,6 +765,16 @@ function saveDelivery() {
     // Apply to the active (last) shift's opening ingredients
     const activeShiftIdx = invData[dateKey].shifts.length - 1;
     const activeShift = invData[dateKey].shifts[activeShiftIdx];
+
+    // Record whether this shift was ALREADY closed at the moment this
+    // movement was saved. The report (renderInventory in pos-part3.js) uses
+    // this flag — not just "does this shift have a closing right now" — to
+    // decide whether to net the movement out of "Used": a delivery/pull-out
+    // logged before closing is already reflected in the cashier's manual
+    // closing/actual count, so netting it again would double-count it.
+    const cl = activeShift.closing;
+    movement.postClosing = !!(cl && ((cl.ingredients && cl.ingredients.length) || (cl.amounts && cl.amounts.length)));
+
     if (!activeShift.opening) activeShift.opening = { ingredients: [], amounts: [] };
     if (!activeShift.opening.ingredients) activeShift.opening.ingredients = [];
     const ings = activeShift.opening.ingredients;

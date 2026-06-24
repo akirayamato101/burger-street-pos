@@ -1015,6 +1015,44 @@ function renderInventory() {
   const closeIngredients = cl.ingredients || [];
   const closeAmounts     = cl.amounts     || [];
 
+  // Map deliveries/pull-outs (tagged with dateKey + shiftIndex at save time)
+  // to the shift/ingredient they actually belong to. Hoisted here (rather than
+  // declared inside the report section further down) so both the Closing list
+  // above and the comparison report below use the exact same numbers.
+  const allDeliveries = loadSharedDeliveries();
+  function deliveredQtyFor(itemName, shiftIdx) {
+    // Net of stock IN (delivery) minus stock OUT (pullout) for this
+    // ingredient/shift, regardless of timing — used only for the "+X
+    // delivered" / "−X pulled out" display hints, not for the Used calc.
+    return allDeliveries
+      .filter(d => d.dateKey === dateKey && d.shiftIndex === shiftIdx
+        && d.item && d.item.trim().toLowerCase() === itemName.trim().toLowerCase())
+      .reduce((sum, d) => sum + (d.type === 'pullout' ? -(d.qtyNum || 0) : (d.qtyNum || 0)), 0);
+  }
+  function pulledOutQtyFor(itemName, shiftIdx) {
+    return allDeliveries
+      .filter(d => d.dateKey === dateKey && d.shiftIndex === shiftIdx && d.type === 'pullout'
+        && d.item && d.item.trim().toLowerCase() === itemName.trim().toLowerCase())
+      .reduce((sum, d) => sum + (d.qtyNum || 0), 0);
+  }
+  // BUGFIX: a movement only needs to be netted out of "Used" when it was
+  // logged AFTER this shift's closing had already been saved — that's the
+  // only case where the delivery/pull-out landed in opening.qty too late to
+  // be reflected in the cashier's manual closing/actual count. A movement
+  // logged BEFORE closing is already baked into that closing count, so
+  // netting it again would double-count it and silently understate (for
+  // deliveries) or overstate (for pull-outs) real ingredient usage. Each
+  // movement is tagged with `postClosing` at save time (saveDelivery(),
+  // pos-part2.js) precisely so this function can tell the two cases apart —
+  // checking "does this shift currently have a closing" is not enough,
+  // because that's true for both cases by the time this report renders.
+  function postClosingNetQtyFor(itemName, shiftIdx) {
+    return allDeliveries
+      .filter(d => d.dateKey === dateKey && d.shiftIndex === shiftIdx && d.postClosing
+        && d.item && d.item.trim().toLowerCase() === itemName.trim().toLowerCase())
+      .reduce((sum, d) => sum + (d.type === 'pullout' ? -(d.qtyNum || 0) : (d.qtyNum || 0)), 0);
+  }
+
   const emptyEl       = document.getElementById('invEmptyState');
   const summaryCards  = document.getElementById('invSummaryCards');
   const compareGrid   = document.getElementById('invCompareGrid');
@@ -1233,7 +1271,11 @@ function renderInventory() {
         const oi = openIngredients.find(o => o.name === i.name);
         const hasActual = i.actualQty !== null && i.actualQty !== undefined && i.actualQty !== '';
         const effectiveQty = hasActual ? (parseInt(i.actualQty, 10) || 0) : (i.closingQty || 0);
-        const used = oi ? Math.max(0, (oi.qty||0) - effectiveQty) : 0;
+        // Net out only post-closing movements (see postClosingNetQtyFor above)
+        // so this badge always agrees with the "Used/Sold" column in the
+        // comparison report below for the same shift/ingredient.
+        const postClosingDelta = postClosingNetQtyFor(i.name, viewIdx);
+        const used = oi ? Math.max(0, (oi.qty||0) - postClosingDelta - effectiveQty) : 0;
         const short = hasActual ? ((i.closingQty || 0) - effectiveQty) : 0;
         return `<div class="inv-list-item">
           <div>
@@ -1312,30 +1354,6 @@ function renderInventory() {
     let rows = '';
     let totalShorts = 0;
 
-    // Map deliveries/pull-outs (tagged with dateKey + shiftIndex at save time)
-    // to the shift/ingredient they actually belong to. This lets Total Used
-    // subtract delivered stock and add back pulled-out stock explicitly,
-    // instead of leaving them folded into Opening — which previously meant a
-    // movement logged after its shift had already closed never made it into
-    // that shift's Used calculation at all.
-    const allDeliveries = loadSharedDeliveries();
-    function deliveredQtyFor(itemName, shiftIdx) {
-      // Net of stock IN (delivery) minus stock OUT (pullout) for this
-      // ingredient/shift. Pull-outs partially cancel a delivery's effect on
-      // "Used" the same way deliveries do — both are non-sales movements that
-      // would otherwise distort how much was actually sold.
-      return allDeliveries
-        .filter(d => d.dateKey === dateKey && d.shiftIndex === shiftIdx
-          && d.item && d.item.trim().toLowerCase() === itemName.trim().toLowerCase())
-        .reduce((sum, d) => sum + (d.type === 'pullout' ? -(d.qtyNum || 0) : (d.qtyNum || 0)), 0);
-    }
-    function pulledOutQtyFor(itemName, shiftIdx) {
-      return allDeliveries
-        .filter(d => d.dateKey === dateKey && d.shiftIndex === shiftIdx && d.type === 'pullout'
-          && d.item && d.item.trim().toLowerCase() === itemName.trim().toLowerCase())
-        .reduce((sum, d) => sum + (d.qtyNum || 0), 0);
-    }
-
     // Ingredient rows
     allIngNames.forEach(name => {
       let totalUsed = 0;
@@ -1354,9 +1372,15 @@ function renderInventory() {
         // so that delivered/pulled amount was never actually available to be
         // "used" by sales. Net it out, or Total Used gets distorted by the
         // full delivered/pulled qty.
-        const deliveredQty = (s.closing ? deliveredQtyFor(name, 0) : 0);
-        const pulledQty = (s.closing ? pulledOutQtyFor(name, 0) : 0);
-        const usedQty  = endQty !== null ? Math.max(0, (startQty - deliveredQty) - endQty) : null;
+        const deliveredQty = deliveredQtyFor(name, 0);
+        const pulledQty = pulledOutQtyFor(name, 0);
+        // BUGFIX: only movements logged AFTER this shift's closing should be
+        // netted out of Used (see postClosingNetQtyFor) — netting ALL movements
+        // whenever the shift happens to be closed (the old `s.closing ? ... : 0`
+        // check) wrongly subtracted mid-shift deliveries too, which were already
+        // reflected in the cashier's closing count, distorting Used/shrinkage.
+        const postClosingDelta = postClosingNetQtyFor(name, 0);
+        const usedQty  = endQty !== null ? Math.max(0, (startQty - postClosingDelta) - endQty) : null;
         unit = opI?.unit || clI?.unit || 'pcs';
         const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
         const actualQty = hasActual ? clI.actualQty : null;
@@ -1393,12 +1417,15 @@ function renderInventory() {
           const clI = (s.closing?.ingredients||[]).find(i => i.name === name);
           const startQty = opI ? (opI.qty||0) : 0;
           const endQty   = clI ? (clI.closingQty ?? 0) : (opI ? null : null);
-          // Exclude movements that arrived after this shift's closing was
-          // already recorded — they landed in opening.qty too late to be
-          // reflected in closingQty, so counting them distorts consumption.
-          const deliveredQty = (s.closing ? deliveredQtyFor(name, si) : 0);
-          const pulledQty = (s.closing ? pulledOutQtyFor(name, si) : 0);
-          const usedQty  = (endQty !== null) ? Math.max(0, (startQty - deliveredQty) - endQty) : 0;
+          const deliveredQty = deliveredQtyFor(name, si);
+          const pulledQty = pulledOutQtyFor(name, si);
+          // BUGFIX: only movements logged AFTER this shift's closing should be
+          // netted out of Used — a movement logged before closing is already
+          // reflected in the cashier's closing count, so netting it again
+          // double-counted it (the old `s.closing ? ... : 0` check couldn't
+          // tell "closed, movement was before" from "closed, movement was after").
+          const postClosingDelta = postClosingNetQtyFor(name, si);
+          const usedQty  = (endQty !== null) ? Math.max(0, (startQty - postClosingDelta) - endQty) : 0;
           unit = opI?.unit || clI?.unit || unit;
           totalUsed += usedQty;
           lastEndQty = endQty;
