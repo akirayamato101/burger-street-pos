@@ -938,7 +938,11 @@ function saveInvModal() {
   saveInventoryData(data);
 
   // FIX: When opening or closing is manually edited, delete any future dates
-  // whose opening was auto-seeded from today so they re-seed with correct values.
+  // whose opening was auto-seeded so they re-seed with correct values.
+  // Any future date with a non-null seededFrom was auto-derived and should be
+  // re-derived now that the source data has changed.  The old check
+  // `sf === dateKey || sf === 'previous shift'` missed dates seeded from an
+  // earlier closing date even though their qty traces back through today.
   {
     const futureDates = Object.keys(data).filter(d => d > dateKey).sort();
     let invChanged = false;
@@ -948,7 +952,7 @@ function saveInvModal() {
       const firstShift = futureShifts[0];
       if (!firstShift.opening) continue;
       const sf = firstShift.opening.seededFrom;
-      if (sf === dateKey || sf === 'previous shift') {
+      if (sf) {
         delete firstShift.opening;
         if (!firstShift.closing) {
           futureShifts.splice(0, 1);
