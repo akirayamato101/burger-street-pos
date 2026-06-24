@@ -393,8 +393,15 @@ function getActiveShift(dateKey, data) {
 // inventory is never lost when a cashier skips the closing step.
 function seedOpeningFromLastClosing(dateKey, invData) {
   const shifts = getDayShifts(dateKey, invData);
-  // If there's already a shift today with an opening, don't re-seed
-  if (shifts.length && shifts[shifts.length - 1].opening) return;
+  // If there's already a shift for this date with a non-empty opening, don't re-seed.
+  // An opening is considered non-empty only when it has at least one ingredient or
+  // amount — an empty shell {ingredients:[], amounts:[]} left by a failed/partial
+  // pull-out must not block seeding, or the opening would stay blank forever.
+  const lastShift = shifts.length ? shifts[shifts.length - 1] : null;
+  const hasRealOpening = !!(lastShift && lastShift.opening &&
+    ((lastShift.opening.ingredients && lastShift.opening.ingredients.length) ||
+     (lastShift.opening.amounts     && lastShift.opening.amounts.length)));
+  if (hasRealOpening) return;
 
   // Look for last closing — could be a previous shift on the same day or a previous day
   let lastClosing = null;

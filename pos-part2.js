@@ -790,11 +790,12 @@ function saveDelivery() {
     // (A pull-out on an item with no existing stock record is logged but has
     // nothing to subtract from — the warning above already covered this case.)
 
-    // FIX: When a pull-out/delivery happens AFTER the closing is already saved,
-    // also update closing.closingQty by the same delta so tomorrow's opening
-    // seeds from the correct number (seedOpeningFromLastClosing reads closingQty,
-    // not opening.qty, so without this the pull-out is invisible to next day).
-    if (movement.postClosing && activeShift.closing && activeShift.closing.ingredients) {
+    // FIX: Whenever a closing exists, sync closing.closingQty with the same
+    // delta so tomorrow's opening seeds from the correct number.
+    // seedOpeningFromLastClosing reads closingQty (not opening.qty), so without
+    // this sync any pull-out or delivery is invisible to the next day's seeding
+    // regardless of whether the closing was saved before or after this movement.
+    if (activeShift.closing && activeShift.closing.ingredients) {
       const closingIng = activeShift.closing.ingredients.find(
         i => i.name.trim().toLowerCase() === item.toLowerCase()
       );
