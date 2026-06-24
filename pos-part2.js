@@ -699,11 +699,6 @@ function saveDelivery() {
   if (!item) { showToast('Please enter an item name.', 'error'); return; }
   if (!qty) { showToast('Please enter a quantity.', 'error'); return; }
 
-  // BUGFIX: Always use actual today's date for deliveries/pull-outs, NOT the
-  // date that happens to be selected in the inventory date picker.
-  // getTodayInvKey() returns the picker value — if the cashier was browsing
-  // a different date when they opened the delivery modal, the movement would
-  // silently apply to the wrong date and leave today's opening unchanged.
   const dateKey = getLocalDateKey();
   const invData = loadInventoryData();
 
@@ -827,7 +822,7 @@ function saveDelivery() {
       const firstShift = futureShifts[0];
       if (!firstShift.opening) continue;
       const sf = firstShift.opening.seededFrom;
-      if (sf) {
+      if (sf === dateKey || sf === 'previous shift') {
         delete firstShift.opening;
         if (!firstShift.closing) {
           futureShifts.splice(0, 1);
