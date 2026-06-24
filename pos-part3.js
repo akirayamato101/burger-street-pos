@@ -1041,9 +1041,27 @@ function renderInventory() {
   const dateKey = getTodayInvKey();
   let data = loadInventoryData();
 
-  // Auto-seed opening from last closing if needed
+  // Auto-seed opening from last closing if needed.
+  // CRITICAL FIX: Also re-seed when the existing opening was auto-seeded
+  // (has seededFrom), not manually entered by the cashier. Auto-seeded openings
+  // are stale snapshots — if a pull-out or delivery was recorded on the source
+  // date after this date was seeded, the stored qty here is wrong. Re-seeding on
+  // every view guarantees the opening always reflects the current source data.
+  // Manually-entered openings (no seededFrom) are never touched — they are the
+  // cashier's own physical count and must not be overwritten automatically.
   const existingShifts = getDayShifts(dateKey, data);
-  if (!existingShifts.length || !existingShifts[existingShifts.length - 1].opening) {
+  const lastExistingShift = existingShifts.length ? existingShifts[existingShifts.length - 1] : null;
+  const isAutoSeeded = !!(lastExistingShift && lastExistingShift.opening && lastExistingShift.opening.seededFrom);
+  if (!existingShifts.length || !lastExistingShift || !lastExistingShift.opening || isAutoSeeded) {
+    // Delete the stale auto-seeded opening so seedOpeningFromLastClosing
+    // always generates a fresh one from the current source data.
+    if (isAutoSeeded) {
+      delete lastExistingShift.opening;
+      if (!lastExistingShift.closing) {
+        existingShifts.splice(existingShifts.length - 1, 1);
+        if (!existingShifts.length) delete data[dateKey];
+      }
+    }
     seedOpeningFromLastClosing(dateKey, data);
     data = loadInventoryData();
   }
