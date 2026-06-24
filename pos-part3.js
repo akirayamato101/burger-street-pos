@@ -940,6 +940,33 @@ function saveInvModal() {
   }
 
   saveInventoryData(data);
+
+  // When the opening or closing is manually edited, any future dates whose
+  // opening was auto-seeded from today are now stale. Invalidate them so they
+  // recompute from scratch on next view, picking up the updated quantities.
+  if (invModalType === 'opening' || invModalType === 'closing') {
+    const futureDates = Object.keys(data).filter(d => d > dateKey).sort();
+    let invChanged = false;
+    for (const futureDate of futureDates) {
+      const futureShifts = data[futureDate] && data[futureDate].shifts;
+      if (!futureShifts || !futureShifts.length) continue;
+      const firstShift = futureShifts[0];
+      if (!firstShift.opening) continue;
+      const sf = firstShift.opening.seededFrom;
+      if (sf === dateKey || sf === 'previous shift') {
+        delete firstShift.opening;
+        if (!firstShift.closing) {
+          futureShifts.splice(0, 1);
+          if (!futureShifts.length) delete data[futureDate];
+        }
+        invChanged = true;
+      } else {
+        break;
+      }
+    }
+    if (invChanged) saveInventoryData(data);
+  }
+
   closeModal('invModal');
   renderInventory();
   // Opening/closing inventory changed -> stock limits on the New Order page

@@ -822,6 +822,45 @@ function saveDelivery() {
 
     saveInventoryData(invData);
 
+    // ── INVALIDATE FUTURE AUTO-SEEDED OPENINGS ──
+    // Problem: seedOpeningFromLastClosing() saves the seeded opening to storage
+    // and then early-returns on all future calls (guard: "if opening exists, return").
+    // This means if the cashier visited tomorrow before doing today's pull-out,
+    // tomorrow's opening is already locked in storage with the OLD qty (100),
+    // and the pull-out's change to today's opening.qty (80) is never seen there.
+    //
+    // Fix: after every stock movement, scan all future dates whose opening was
+    // auto-seeded from today. Delete those seeded openings so they recompute from
+    // scratch next time the cashier views them — picking up the corrected qty.
+    // Only openings where seededFrom === today are deleted; manually-entered
+    // openings (seededFrom is null/undefined) are never touched.
+    const futureDates = Object.keys(invData).filter(d => d > dateKey).sort();
+    let invChanged = false;
+    for (const futureDate of futureDates) {
+      const futureShifts = invData[futureDate] && invData[futureDate].shifts;
+      if (!futureShifts || !futureShifts.length) continue;
+      // Only look at the first shift of each future date — that is the one
+      // auto-seeded from the previous day closing/opening.
+      const firstShift = futureShifts[0];
+      if (!firstShift.opening) continue;
+      const sf = firstShift.opening.seededFrom;
+      // Delete if seededFrom points back to today or was a same-day carry-over.
+      // Stop at the first future date seeded from a different source — cascading
+      // further would risk deleting openings unrelated to today's movement.
+      if (sf === dateKey || sf === 'previous shift') {
+        delete firstShift.opening;
+        // If the shift only had this opening (no closing), clean up the empty record.
+        if (!firstShift.closing) {
+          futureShifts.splice(0, 1);
+          if (!futureShifts.length) delete invData[futureDate];
+        }
+        invChanged = true;
+      } else {
+        break;
+      }
+    }
+    if (invChanged) saveInventoryData(invData);
+
     // Record exactly where this movement landed so the report can pull it
     // back out of "Used" later, even if this shift has since closed.
     movement.dateKey = dateKey;
