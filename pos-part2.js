@@ -664,7 +664,7 @@ function openDeliveryModal(type = 'delivery') {
   // falling back to the master ingredient template for everything else.
   const datalist = document.getElementById('deliveryItemSuggestions');
   if (datalist) {
-    const dateKey = getTodayInvKey();
+    const dateKey = getLocalDateKey();
     const invData = loadInventoryData();
     const todayShifts = invData[dateKey]?.shifts || [];
     const activeShift = todayShifts[todayShifts.length - 1];
@@ -699,7 +699,12 @@ function saveDelivery() {
   if (!item) { showToast('Please enter an item name.', 'error'); return; }
   if (!qty) { showToast('Please enter a quantity.', 'error'); return; }
 
-  const dateKey = getTodayInvKey();
+  // BUGFIX: Always use actual today's date for deliveries/pull-outs, NOT the
+  // date that happens to be selected in the inventory date picker.
+  // getTodayInvKey() returns the picker value — if the cashier was browsing
+  // a different date when they opened the delivery modal, the movement would
+  // silently apply to the wrong date and leave today's opening unchanged.
+  const dateKey = getLocalDateKey();
   const invData = loadInventoryData();
 
   // For pull-outs, check current stock so the cashier can't silently push an
@@ -811,16 +816,9 @@ function saveDelivery() {
 
     saveInventoryData(invData);
 
-    // FIX: If a future date was already auto-seeded before this pull-out /
-    // delivery happened, its opening is now stale. Invalidate every future
-    // auto-seeded opening (identified by having any non-null seededFrom) so
-    // it re-seeds fresh on next view and picks up the corrected qty.
-    // NOTE: The old check `sf === dateKey || sf === 'previous shift'` was too
-    // narrow — it missed dates whose seededFrom pointed to an earlier closing
-    // date rather than today, even though the chain of values still passed
-    // through the qty we just changed. Any auto-seeded opening (seededFrom
-    // is a non-empty string) is safe to invalidate because it was always
-    // derived automatically and will be re-derived correctly on next render.
+    // FIX: If a future date was already auto-seeded from today before this
+    // pull-out happened, its opening is now stale. Delete it so it re-seeds
+    // fresh on next view and picks up the corrected qty.
     const futureDates = Object.keys(invData).filter(d => d > dateKey).sort();
     let invChanged = false;
     for (const futureDate of futureDates) {
@@ -829,9 +827,6 @@ function saveDelivery() {
       const firstShift = futureShifts[0];
       if (!firstShift.opening) continue;
       const sf = firstShift.opening.seededFrom;
-      // Only invalidate auto-seeded openings (seededFrom is set).
-      // Manually-entered openings (seededFrom is null/undefined) must never
-      // be touched — the cashier entered those values deliberately.
       if (sf) {
         delete firstShift.opening;
         if (!firstShift.closing) {
