@@ -1407,8 +1407,11 @@ function renderInventory() {
 
   // ── Comparison report ────────────────────────────────────────────────────
   const anyShiftHasClosing = dayShifts.some(s => (s.closing?.ingredients?.length || s.closing?.amounts?.length));
+  // Always show the report section — even without a closing, the opening data
+  // is useful to see (stock on hand, pull-outs, etc.). When no closing exists,
+  // we render an opening-only table with a "no closing yet" notice.
+  reportSection.style.display = 'block';
   if (anyShiftHasClosing) {
-    reportSection.style.display = 'block';
 
     // Build report across ALL shifts so the table shows the full day
     // For single shift: Item | Opening | Closing | Used | Actual | Variance | Status
@@ -1668,7 +1671,91 @@ function renderInventory() {
     const oldEl = document.getElementById('invAllShifts');
     if (oldEl) oldEl.remove();
   } else {
-    reportSection.style.display = 'none';
+    // No closing yet — render an opening-only report so the cashier can still
+    // see current stock levels, pull-outs, and deliveries in table form.
+    const table = document.getElementById('invReportTable');
+    const thead = table.querySelector('thead tr');
+    const tbody = document.getElementById('invReportBody');
+    thead.innerHTML = '<th>Ingredient/Supply</th><th>Opening</th><th>Closing</th><th>Used/Sold</th><th>Actual Count</th><th>Variance</th><th>Status</th>';
+
+    const allDeliveries = loadSharedDeliveries();
+    let rows = '';
+
+    // Collect all opening ingredients across all shifts for this day
+    const allIngNames = [...new Set(dayShifts.flatMap(s =>
+      (s.opening?.ingredients || []).map(i => i.name)
+    ))];
+    const allAmtNames = [...new Set(dayShifts.flatMap(s =>
+      (s.opening?.amounts || []).map(a => a.name)
+    ))];
+
+    allIngNames.forEach(name => {
+      const opI = openIngredients.find(i => i.name === name);
+      const unit = opI?.unit || 'pcs';
+      const openQty = opI ? (opI.qty || 0) : 0;
+      // Show pull-out/delivery hints the same way the full report does
+      const netMoved = allDeliveries
+        .filter(d => d.dateKey === dateKey && d.shiftIndex === viewIdx
+          && d.item && d.item.trim().toLowerCase() === name.trim().toLowerCase())
+        .reduce((sum, d) => sum + (d.type === 'pullout' ? -(d.qtyNum || 0) : (d.qtyNum || 0)), 0);
+      const movedHint = netMoved !== 0
+        ? `<span style="font-size:0.72rem;color:${netMoved < 0 ? 'var(--red)' : 'var(--green)'};margin-left:4px;">${netMoved < 0 ? netMoved : '+' + netMoved} ${netMoved < 0 ? 'pulled out' : 'delivered'}</span>`
+        : '';
+      rows += `<tr>
+        <td><b>${escHtml(name)}</b> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span>${movedHint}</td>
+        <td style="color:var(--green);font-weight:700;">${openQty} ${escHtml(unit)}</td>
+        <td style="color:var(--text3);">—</td>
+        <td style="color:var(--text3);">—</td>
+        <td style="color:var(--text3);">—</td>
+        <td style="color:var(--text3);">—</td>
+        <td><span style="color:var(--green);font-weight:700;">✓ OK</span></td>
+      </tr>`;
+    });
+
+    allAmtNames.forEach(name => {
+      const opA = openAmounts.find(a => a.name === name);
+      const openAmt = opA ? (opA.amount || 0) : 0;
+      rows += `<tr>
+        <td><b>${escHtml(name)}</b> <span style="font-size:0.72rem;color:var(--blue);">(₱)</span></td>
+        <td style="color:var(--blue);font-weight:700;">₱${fmt(openAmt)}</td>
+        <td style="color:var(--text3);">—</td>
+        <td style="color:var(--text3);">—</td>
+        <td style="color:var(--text3);">—</td>
+        <td style="color:var(--text3);">—</td>
+        <td><span style="color:var(--green);font-weight:700;">✓ OK</span></td>
+      </tr>`;
+    });
+
+    tbody.innerHTML = rows || '<tr><td colspan="7" style="text-align:center;color:var(--text3);">No opening inventory set.</td></tr>';
+
+    // Cash summary — opening only
+    const balanceEl = document.getElementById('invCashBalance');
+    if (balanceEl) {
+      const totalOpenCash = openAmounts.reduce((s, a) => s + (a.amount || 0), 0);
+      balanceEl.innerHTML = `
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:12px;">
+          <div style="text-align:center;">
+            <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div>
+            <div style="font-size:1.3rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">CASH USED</div>
+            <div style="font-size:1.3rem;font-weight:800;color:var(--text3);">—</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div>
+            <div style="font-size:1.3rem;font-weight:800;color:var(--text3);">—</div>
+          </div>
+        </div>
+        <div style="padding:14px 20px;border-radius:12px;border:1.5px solid rgba(234,179,8,0.4);background:rgba(234,179,8,0.07);text-align:center;">
+          🕐 <span style="font-weight:800;color:#eab308;font-size:1rem;">Shift not yet closed — no closing data available</span>
+        </div>`;
+      balanceEl.style.background = 'var(--card-bg)';
+      balanceEl.style.borderColor = 'rgba(234,179,8,0.3)';
+    }
+
+    const oldEl = document.getElementById('invAllShifts');
+    if (oldEl) oldEl.remove();
   }
 }
 
