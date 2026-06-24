@@ -938,26 +938,30 @@ function saveInvModal() {
   saveInventoryData(data);
 
   // FIX: When opening or closing is manually edited, delete any future dates
-  // whose opening was auto-seeded from today so they re-seed with correct values.
+  // whose opening was auto-seeded from today (or from a chain of seeded dates)
+  // so they re-seed with correct values.
+  // CHAIN FIX: track invalidated dates so that Day C (seeded from Day B which
+  // was seeded from today) is also cleared, not just Day B.
   {
     const futureDates = Object.keys(data).filter(d => d > dateKey).sort();
     let invChanged = false;
+    const invalidatedDates = new Set([dateKey]);
     for (const futureDate of futureDates) {
       const futureShifts = data[futureDate] && data[futureDate].shifts;
       if (!futureShifts || !futureShifts.length) continue;
       const firstShift = futureShifts[0];
       if (!firstShift.opening) continue;
       const sf = firstShift.opening.seededFrom;
-      if (sf) {
+      if (sf && (sf === 'previous shift' || invalidatedDates.has(sf))) {
         delete firstShift.opening;
         if (!firstShift.closing) {
           futureShifts.splice(0, 1);
           if (!futureShifts.length) delete data[futureDate];
         }
         invChanged = true;
-      } else {
-        break;
+        invalidatedDates.add(futureDate);
       }
+      // No break — must scan ALL future dates to catch chains like A→B→C→D
     }
     if (invChanged) saveInventoryData(data);
   }

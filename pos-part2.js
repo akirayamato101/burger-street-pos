@@ -811,27 +811,35 @@ function saveDelivery() {
 
     saveInventoryData(invData);
 
-    // FIX: If a future date was already auto-seeded from today before this
-    // pull-out happened, its opening is now stale. Delete it so it re-seeds
-    // fresh on next view and picks up the corrected qty.
+    // FIX: If a future date was already auto-seeded before this pull-out/delivery
+    // happened, its opening is now stale. Delete it so it re-seeds fresh on next
+    // view and picks up the corrected qty.
+    // CHAIN FIX: use a set of "dirty" source dates so that if Day C was seeded
+    // from Day B which was seeded from today (Day A), Day C is also invalidated
+    // even though its seededFrom is "Day B", not "Day A". The previous `break`
+    // caused the loop to stop at Day B and leave Day C with stale data.
     const futureDates = Object.keys(invData).filter(d => d > dateKey).sort();
     let invChanged = false;
+    const invalidatedDates = new Set([dateKey]);
     for (const futureDate of futureDates) {
       const futureShifts = invData[futureDate] && invData[futureDate].shifts;
       if (!futureShifts || !futureShifts.length) continue;
       const firstShift = futureShifts[0];
       if (!firstShift.opening) continue;
       const sf = firstShift.opening.seededFrom;
-      if (sf === dateKey || sf === 'previous shift') {
+      // Invalidate if seeded from today or from any already-invalidated date,
+      // OR if it was a same-day "previous shift" seed (which is always stale
+      // when the source shift's opening changed).
+      if (sf === 'previous shift' || invalidatedDates.has(sf)) {
         delete firstShift.opening;
         if (!firstShift.closing) {
           futureShifts.splice(0, 1);
           if (!futureShifts.length) delete invData[futureDate];
         }
         invChanged = true;
-      } else {
-        break;
+        invalidatedDates.add(futureDate); // mark so dates seeded from this are also caught
       }
+      // No break — must scan ALL future dates to catch chains like A→B→C→D
     }
     if (invChanged) saveInventoryData(invData);
 
