@@ -789,6 +789,37 @@ function saveDelivery() {
     }
     // (A pull-out on an item with no existing stock record is logged but has
     // nothing to subtract from — the warning above already covered this case.)
+
+    // ── CRITICAL: keep the closing record in sync with the opening ──
+    // When a stock movement is saved AFTER the shift has already been closed,
+    // opening.qty is updated above, but seedOpeningFromLastClosing (which seeds
+    // tomorrow's opening) reads from closing.closingQty — NOT opening.qty.
+    // Without this sync, a post-closing pull-out (e.g. remove 20 patties from
+    // the 80 remaining after closing) is invisible to tomorrow's opening, which
+    // would seed from the stale closingQty and restore the wrong number.
+    // We only sync the one ingredient that was just moved, and only if the
+    // closing record already exists for this shift.
+    if (movement.postClosing && activeShift.closing && activeShift.closing.ingredients) {
+      const closingIng = activeShift.closing.ingredients.find(
+        i => i.name.trim().toLowerCase() === item.toLowerCase()
+      );
+      if (closingIng) {
+        // Apply the same delta to closingQty, floored at 0
+        closingIng.closingQty = Math.max(0, (closingIng.closingQty ?? 0) + delta);
+        // If the cashier had entered an actual physical recount, adjust that too
+        // so the recount stays consistent with the movement.
+        if (closingIng.actualQty !== null && closingIng.actualQty !== undefined && closingIng.actualQty !== '') {
+          closingIng.actualQty = Math.max(0, (parseInt(closingIng.actualQty, 10) || 0) + delta);
+        }
+      } else if (type === 'delivery') {
+        // New ingredient delivered after closing — add it to the closing record too
+        // so it flows forward to tomorrow's opening.
+        activeShift.closing.ingredients.push({
+          name: item, unit: unit, closingQty: qtyNum, actualQty: null
+        });
+      }
+    }
+
     saveInventoryData(invData);
 
     // Record exactly where this movement landed so the report can pull it

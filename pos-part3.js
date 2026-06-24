@@ -466,7 +466,10 @@ function seedOpeningFromLastClosing(dateKey, invData) {
     };
   } else if (lastOpeningFallback) {
     // Fallback: cashier never closed — carry the opening amounts forward as-is
-    // so inventory values are not lost.
+    // so inventory values are not lost. Only copy the clean fields (name, unit,
+    // qty) — never carry usedQty, closingQty, or actualQty into the next day's
+    // opening, as those belong to the previous shift's tracking state and would
+    // make tomorrow start with phantom "already used" stock.
     newOpening = {
       ingredients: (lastOpeningFallback.ingredients || []).map(i => ({
         name: i.name, unit: i.unit, qty: (i.qty ?? 0)
@@ -895,8 +898,19 @@ function saveInvModal() {
   const cashierName = activeCashier?.name || BIZ_NAME;
 
   if (invModalType === 'opening') {
-    const ings = invIngredients.filter(i => i.name && i.name.trim());
-    const amts = invAmounts.filter(a => a.name && a.name.trim());
+    const ings = invIngredients
+      .filter(i => i.name && i.name.trim())
+      // Strip any stale tracking fields that belong to the previous shift/day.
+      // invIngredients is loaded with a spread of the existing opening record,
+      // which may carry usedQty (from sales deductions), closingQty, or
+      // actualQty from the prior session. Saving those fields into the new
+      // opening would make the live-remaining calculation start below zero
+      // (usedQty already > 0 before any sale today) and confuse the closing
+      // pre-fill (closingQty would show a stale number from yesterday).
+      .map(({ name, unit, qty }) => ({ name, unit, qty: qty ?? 0 }));
+    const amts = invAmounts
+      .filter(a => a.name && a.name.trim())
+      .map(({ name, amount }) => ({ name, amount: amount ?? 0 }));
     if (!ings.length && !amts.length) { showToast('Please add at least one item.', 'error'); return; }
     shift.opening = { ingredients: ings, amounts: amts, cashier: cashierName, savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'}) };
     syncIngredientTemplate(ings, amts);
