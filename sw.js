@@ -3,7 +3,7 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v7';
+const CACHE_NAME = 'burger-pos-v8';
 
 const ASSETS_TO_CACHE = [
   '/',
@@ -15,7 +15,7 @@ const ASSETS_TO_CACHE = [
   // caches.match() for these requests, leaving the app unable to load its
   // own code on a first-ever offline launch.
   '/pos-part1.js?v=1',
-  '/pos-part2.js?v=1',
+  '/pos-part2.js?v=2',
   '/pos-part3.js?v=1',
   '/pos-part4.js?v=1',
   '/manifest.json',
