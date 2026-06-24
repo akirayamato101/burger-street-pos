@@ -203,6 +203,10 @@ function renderOwnerSummary() {
   const summaryDate = document.getElementById('ownerSummaryDate')?.value || new Date().toISOString().split('T')[0];
   const container = document.getElementById('ownerSummaryContent');
   if (!container) return;
+  // Load shared expenses for the day (expenses are store-wide, not per cashier)
+  const dayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(summaryDate));
+  const totalExpenses = dayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+
   let totalSales = 0, totalCashAdv = 0, totalOrders = 0, rows = '';
   cashiers.forEach(c => {
     let orders = [], cashAdvances = [];
@@ -216,10 +220,6 @@ function renderOwnerSummary() {
     } catch(e) {}
     const dayOrders = orders.filter(o => o.date && o.date.startsWith(summaryDate));
     const sales = dayOrders.reduce((sum, o) => sum + o.total, 0);
-    // Cash advances are deducted from the day's sales — same rule as the
-    // cashier's own Shift Summary (renderSummary()). Without this, the
-    // owner's total looked higher than what was actually collected, since
-    // cash handed out as an advance was never subtracted here.
     const dayCashAdv = cashAdvances
       .filter(a => a.datetime && a.datetime.startsWith(summaryDate))
       .reduce((sum, a) => sum + (a.amount || 0), 0);
@@ -238,18 +238,34 @@ function renderOwnerSummary() {
       </div>`;
   });
   const totalNetSales = Math.max(0, totalSales - totalCashAdv);
+  const totalAfterExpenses = Math.max(0, totalNetSales - totalExpenses);
   container.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
       <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:14px;text-align:center;">
-        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">NET SALES${totalCashAdv > 0 ? ' (AFTER ADVANCES)' : ''}</div>
-        <div style="font-size:1.4rem;font-weight:800;color:var(--green);">₱${fmt(totalNetSales)}</div>
-        ${totalCashAdv > 0 ? `<div style="font-size:0.72rem;color:var(--text3);margin-top:2px;">₱${fmt(totalSales)} gross &minus; ₱${fmt(totalCashAdv)} advances</div>` : ''}
+        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">GROSS SALES</div>
+        <div style="font-size:1.4rem;font-weight:800;color:var(--green);">₱${fmt(totalSales)}</div>
       </div>
       <div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:12px;padding:14px;text-align:center;">
         <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">TOTAL ORDERS</div>
         <div style="font-size:1.4rem;font-weight:800;color:var(--blue);">${totalOrders}</div>
       </div>
     </div>
+    ${(totalCashAdv > 0 || totalExpenses > 0) ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      ${totalCashAdv > 0 ? `<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">CASH ADVANCES</div>
+        <div style="font-size:1.3rem;font-weight:800;color:var(--red);">-₱${fmt(totalCashAdv)}</div>
+      </div>` : ''}
+      ${totalExpenses > 0 ? `<div style="background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">EXPENSES</div>
+        <div style="font-size:1.3rem;font-weight:800;color:var(--orange);">-₱${fmt(totalExpenses)}</div>
+      </div>` : ''}
+    </div>
+    <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:14px;text-align:center;margin-bottom:12px;">
+      <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">NET (AFTER ADVANCES + EXPENSES)</div>
+      <div style="font-size:1.5rem;font-weight:800;color:var(--green);">₱${fmt(totalAfterExpenses)}</div>
+      <div style="font-size:0.72rem;color:var(--text3);margin-top:2px;">₱${fmt(totalSales)} − ₱${fmt(totalCashAdv)} advances − ₱${fmt(totalExpenses)} expenses</div>
+    </div>` : ''}
     <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">PER CASHIER</div>
     ${rows || '<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No data for this date.</p>'}`;
 }
@@ -1729,7 +1745,7 @@ function renderInventory() {
     tbody.innerHTML = rows || '<tr><td colspan="7" style="text-align:center;color:var(--text3);">No opening inventory set.</td></tr>';
 
     // Cash summary — opening only
-    const balanceEl = document.getElementById('invCashBalance');
+    const balanceEl = document.getElementById('invBalanceCheck');
     if (balanceEl) {
       const totalOpenCash = openAmounts.reduce((s, a) => s + (a.amount || 0), 0);
       balanceEl.innerHTML = `
@@ -1759,6 +1775,137 @@ function renderInventory() {
   }
 }
 
+
+// =================== EXPENSE / CASH-OUT SYSTEM ===================
+const EXPENSE_KEY = 'burgerStreetExpenses';
+
+function loadExpenses() {
+  try {
+    const s = localStorage.getItem(EXPENSE_KEY);
+    return s ? JSON.parse(s) : [];
+  } catch(e) { return []; }
+}
+
+function saveExpenses(arr) {
+  try { localStorage.setItem(EXPENSE_KEY, JSON.stringify(arr)); } catch(e) {}
+}
+
+function openExpenseModal() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.getElementById('expenseDatetime').value = local;
+  document.getElementById('expenseDesc').value = '';
+  document.getElementById('expenseAmount').value = '';
+  document.getElementById('expenseNotes').value = '';
+  document.getElementById('expensePaidBy').value = posState.settings.cashierName || '';
+  document.getElementById('expenseCategory').value = 'Supplies';
+  document.getElementById('expenseModal').style.display = 'flex';
+}
+
+function closeExpenseModal() {
+  document.getElementById('expenseModal').style.display = 'none';
+}
+
+function saveExpense() {
+  const desc    = document.getElementById('expenseDesc').value.trim();
+  const amount  = parseFloat(document.getElementById('expenseAmount').value);
+  const cat     = document.getElementById('expenseCategory').value;
+  const paidBy  = document.getElementById('expensePaidBy').value.trim();
+  const notes   = document.getElementById('expenseNotes').value.trim();
+  const dt      = document.getElementById('expenseDatetime').value;
+
+  if (!desc)           { showToast('Please enter a description.', 'error'); return; }
+  if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
+
+  const expense = {
+    id: Date.now(),
+    category: cat,
+    desc,
+    amount,
+    paidBy: paidBy || '—',
+    notes: notes || '',
+    datetime: dt || new Date().toISOString()
+  };
+
+  const expenses = loadExpenses();
+  expenses.unshift(expense);
+  saveExpenses(expenses);
+  closeExpenseModal();
+  renderExpenseLog();
+  showToast(`✅ Expense of ₱${fmt(amount)} recorded.`, 'success');
+}
+
+function deleteExpense(id) {
+  if (!confirm('Delete this expense record?')) return;
+  const expenses = loadExpenses().filter(e => e.id !== id);
+  saveExpenses(expenses);
+  renderExpenseLog();
+  showToast('Expense deleted.', '');
+}
+
+function renderExpenseLog() {
+  const container  = document.getElementById('expenseList');
+  const totalBar   = document.getElementById('expenseTotalBar');
+  const totalAmtEl = document.getElementById('expenseTotalAmt');
+  if (!container) return;
+
+  const expenses = loadExpenses();
+  const today = new Date().toISOString().split('T')[0];
+  const todayExp = expenses.filter(e => e.datetime && e.datetime.startsWith(today));
+  const todayTotal = todayExp.reduce((s, e) => s + (e.amount || 0), 0);
+
+  if (totalBar) totalBar.style.display = todayTotal > 0 ? 'flex' : 'none';
+  if (totalAmtEl) totalAmtEl.textContent = '₱' + fmt(todayTotal);
+
+  if (!expenses.length) {
+    container.innerHTML = '<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No expenses recorded yet.</p>';
+    return;
+  }
+
+  // Category badge colors
+  const catColor = {
+    Supplies:   'var(--orange)',
+    Utilities:  'var(--blue)',
+    Repairs:    '#a855f7',
+    Rent:       '#ec4899',
+    Transport:  'var(--green)',
+    Marketing:  '#eab308',
+    Other:      'var(--text3)'
+  };
+
+  container.innerHTML = expenses.map(e => {
+    const dt      = new Date(e.datetime);
+    const dateStr = dt.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+    const timeStr = dt.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    const isToday = e.datetime && e.datetime.startsWith(today);
+    const color   = catColor[e.category] || 'var(--text3)';
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border);gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px;">
+            <span style="font-size:0.7rem;font-weight:800;color:${color};background:${color}1a;border:1px solid ${color}55;border-radius:20px;padding:1px 8px;">${escHtml(e.category)}</span>
+            ${isToday ? '<span style="font-size:0.7rem;background:var(--orange);color:#fff;padding:1px 7px;border-radius:20px;font-weight:700;">TODAY</span>' : ''}
+          </div>
+          <div style="font-weight:700;font-size:0.95rem;color:var(--text);">${escHtml(e.desc)}</div>
+          ${e.notes ? `<div style="font-size:0.78rem;color:var(--text3);margin-top:1px;">📝 ${escHtml(e.notes)}</div>` : ''}
+          <div style="font-size:0.75rem;color:var(--text3);margin-top:2px;">👤 ${escHtml(e.paidBy)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-weight:800;color:var(--orange);font-size:1rem;">-₱${fmt(e.amount)}</div>
+          <div style="font-size:0.78rem;font-weight:700;color:var(--text2);">${dateStr}</div>
+          <div style="font-size:0.75rem;color:var(--text3);">${timeStr}</div>
+          <button onclick="deleteExpense(${e.id})" style="margin-top:4px;font-size:0.7rem;color:var(--red);background:none;border:none;cursor:pointer;padding:0;font-weight:700;">🗑 Delete</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function getExpenseTotalToday() {
+  const today = new Date().toISOString().split('T')[0];
+  return loadExpenses()
+    .filter(e => e.datetime && e.datetime.startsWith(today))
+    .reduce((s, e) => s + (e.amount || 0), 0);
+}
 
 // =================== PRIORITY STOCK ALERTS ===================
 // Returns the live remaining stock for each opening ingredient in the active shift.

@@ -463,6 +463,7 @@ function unlockApp() {
   refreshSettingsPage();
   renderDeliveryLog();
   renderCashAdvanceLog();
+  renderExpenseLog();
 }
 
 function logOut() {
@@ -502,7 +503,7 @@ function showPage(page) {
   if (page === 'summary') renderSummary();
   if (page === 'products') refreshProductList();
   if (page === 'settings') refreshSettingsPage();
-  if (page === 'inventory') { currentShiftIndex = -1; renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); }
+  if (page === 'inventory') { currentShiftIndex = -1; renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); renderExpenseLog(); }
   if (page === 'debugdata') { renderDebugData(); }
 }
 

@@ -550,6 +550,24 @@
             <p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No cash advances recorded yet.</p>
           </div>
         </div>
+
+        <!-- ===== EXPENSE / CASH-OUT LOG ===== -->
+        <div class="dash-section" style="margin-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+            <div>
+              <h4 style="font-weight:800;color:var(--text);font-size:1rem;">🧾 Expenses / Cash-Outs</h4>
+              <div style="font-size:0.75rem;color:var(--text3);margin-top:2px;">Money spent from the till on supplies, utilities, etc.</div>
+            </div>
+            <button class="btn btn-sm" style="background:var(--orange);color:#fff;font-weight:700;" onclick="openExpenseModal()">+ Record Expense</button>
+          </div>
+          <div id="expenseTotalBar" style="display:none;padding:10px 14px;border-radius:10px;background:var(--bg3);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.85rem;font-weight:700;color:var(--text2);">Total Expenses Today</span>
+            <span id="expenseTotalAmt" style="font-weight:800;color:var(--orange);font-size:1rem;">₱0.00</span>
+          </div>
+          <div id="expenseList">
+            <p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No expenses recorded yet.</p>
+          </div>
+        </div>
       </section>
 
       <!-- ===== CASH ADVANCE MODAL ===== -->
@@ -579,6 +597,52 @@
             <input type="datetime-local" id="caDateTime" class="input-field" style="width:100%;" />
           </div>
           <button class="btn btn-primary" onclick="saveCashAdvance()" style="width:100%;font-size:1rem;font-weight:800;">Save Cash Advance</button>
+        </div>
+      </div>
+
+      <!-- ===== EXPENSE / CASH-OUT MODAL ===== -->
+      <div id="expenseModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+        <div style="background:var(--card-bg);border-radius:20px;padding:28px 24px;width:min(94vw,480px);max-height:85vh;overflow-y:auto;box-shadow:var(--shadow);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <h4 style="font-weight:800;font-size:1.1rem;">🧾 Record Expense / Cash-Out</h4>
+            <button onclick="closeExpenseModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3);">✕</button>
+          </div>
+          <div style="padding:12px 16px;border-radius:10px;background:var(--bg3);margin-bottom:18px;font-size:0.83rem;color:var(--text3);line-height:1.5;">
+            📝 Use this to record cash taken from the till for business expenses (supplies, utilities, repairs, etc.). This is separate from cashier salary advances.
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">CATEGORY *</label>
+            <select id="expenseCategory" class="input-field" style="width:100%;">
+              <option value="Supplies">Supplies / Ingredients</option>
+              <option value="Utilities">Utilities (Electric, Water, Gas)</option>
+              <option value="Repairs">Repairs / Maintenance</option>
+              <option value="Rent">Rent</option>
+              <option value="Transport">Transport / Delivery Fee</option>
+              <option value="Marketing">Marketing / Promotions</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">DESCRIPTION *</label>
+            <input type="text" id="expenseDesc" class="input-field" style="width:100%;" placeholder="e.g. Cooking oil, LPG refill, Packaging" />
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">AMOUNT (₱) *</label>
+            <input type="number" id="expenseAmount" class="input-field" style="width:100%;" placeholder="e.g. 350" min="1" inputmode="decimal" />
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">PAID BY / RECORDED BY</label>
+            <input type="text" id="expensePaidBy" class="input-field" style="width:100%;" placeholder="e.g. Cashier name" />
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">NOTES (optional)</label>
+            <input type="text" id="expenseNotes" class="input-field" style="width:100%;" placeholder="e.g. From Puregold, receipt #123" />
+          </div>
+          <div style="margin-bottom:20px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">DATE & TIME</label>
+            <input type="datetime-local" id="expenseDatetime" class="input-field" style="width:100%;" />
+          </div>
+          <button class="btn btn-primary" onclick="saveExpense()" style="width:100%;font-size:1rem;font-weight:800;background:var(--orange);">Save Expense</button>
         </div>
       </div>
 
