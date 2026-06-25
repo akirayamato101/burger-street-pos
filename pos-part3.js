@@ -426,33 +426,70 @@ function seedOpeningFromLastClosing(dateKey, invData) {
   let lastOpeningFallback = null;
   let fallbackFrom = null;
 
-  // Check other shifts on same day first
+  // Check other shifts on same day first — search backwards through ALL prior
+  // shifts (not just the immediately preceding one) to find the most recent
+  // shift that has a closing. Only fall back to an opening if no prior shift
+  // on this day has a closing at all.
   if (shifts.length > 1) {
-    const prev = shifts[shifts.length - 2];
-    if (prev.closing) { lastClosing = prev.closing; seededFrom = dateKey; }
-    else if (prev.opening) { lastOpeningFallback = prev.opening; fallbackFrom = dateKey; }
+    let foundSameDayClosing = false;
+    for (let si = shifts.length - 2; si >= 0; si--) {
+      if (shifts[si] && shifts[si].closing) {
+        lastClosing = shifts[si].closing;
+        seededFrom = 'previous shift';
+        foundSameDayClosing = true;
+        break;
+      }
+    }
+    if (!foundSameDayClosing) {
+      // No closing on any prior shift — use the most recent prior opening
+      for (let si = shifts.length - 2; si >= 0; si--) {
+        if (shifts[si] && shifts[si].opening) {
+          lastOpeningFallback = shifts[si].opening;
+          fallbackFrom = dateKey;
+          break;
+        }
+      }
+    }
   }
 
   // Otherwise look at previous days. We want the MOST RECENT day that has
-  // any record at all. Within that most recent day, prefer its closing;
-  // if that day only has an opening (cashier edited opening but never
-  // saved a closing), use that opening instead — do NOT skip past it to
-  // search for a closing on some older day. Skipping past it was the bug:
-  // a deliberate opening edit (e.g. setting everything to 0 to test) on
-  // the most recent day was being ignored in favor of stale data from
-  // days further back that happened to have a closing saved.
+  // any record at all. Within that most recent day, prefer the MOST RECENT
+  // SHIFT THAT HAS A CLOSING — even if a later shift on the same day has no
+  // closing yet (e.g. S2 is still open when the day ends). Only fall back to
+  // the last opening on the most recent day when NO shift on that day has
+  // any closing at all.
+  // BUG THAT WAS HERE: the old code only checked `lastPrevShift` (the last/
+  // most recent shift). If that shift had no closing, it immediately used its
+  // opening as the fallback — ignoring earlier shifts on the SAME day that
+  // DID have a closing. This caused today's opening to be seeded as
+  // (S2_open_qty - S2_usedQty) = (80 - 16) = 64 instead of the correct
+  // S1 closing qty of 80, because the unclosed S2 was examined first and
+  // the closed S1 was never reached.
   if (!lastClosing) {
     const dates = Object.keys(invData)
       .filter(d => d < dateKey)
       .sort();
     for (let i = dates.length - 1; i >= 0; i--) {
       const prevShifts = getDayShifts(dates[i], invData);
-      const lastPrevShift = prevShifts[prevShifts.length - 1];
-      if (lastPrevShift && lastPrevShift.closing) {
-        lastClosing = lastPrevShift.closing;
-        seededFrom = dates[i];
-        break;
+      // Search backwards through shifts on this day to find the most recent
+      // shift that has a closing. If none have a closing, fall back to the
+      // most recent shift that has an opening.
+      let foundClosing = false;
+      for (let si = prevShifts.length - 1; si >= 0; si--) {
+        if (prevShifts[si] && prevShifts[si].closing) {
+          lastClosing = prevShifts[si].closing;
+          seededFrom = dates[i];
+          foundClosing = true;
+          break;
+        }
       }
+      if (foundClosing) break;
+      // No closing found on this day — use the most recent opening as fallback.
+      // Do NOT skip past this day to search for a closing on some older day.
+      // Skipping past it was the original bug: a deliberate opening edit on
+      // the most recent day was being ignored in favour of stale data from
+      // days further back that happened to have a closing saved.
+      const lastPrevShift = prevShifts[prevShifts.length - 1];
       if (lastPrevShift && lastPrevShift.opening) {
         lastOpeningFallback = lastPrevShift.opening;
         fallbackFrom = dates[i];
