@@ -595,6 +595,11 @@ function autoFillDeliveryQty() {
   }
 }
 
+function markDeliveryQtyManual() {
+  const display = document.getElementById('deliveryQty');
+  if (display) display._manuallyEdited = display.value !== '';
+}
+
 function setDeliveryType(type) {
   document.getElementById('deliveryType').value = type;
 
@@ -653,6 +658,8 @@ function openDeliveryModal(type = 'delivery') {
   document.getElementById('deliveryDateTime').value = local;
   document.getElementById('deliveryItem').value = '';
   document.getElementById('deliveryQty').value = '';
+  const dQty = document.getElementById('deliveryQty');
+  if (dQty) dQty._manuallyEdited = false;
   document.getElementById('deliveryQtyNum').value = '';
   document.getElementById('deliveryUnit').value = 'pcs';
   document.getElementById('deliverySupplier').value = '';
@@ -697,7 +704,12 @@ function saveDelivery() {
   const qtyNum = parseFloat(document.getElementById('deliveryQtyNum').value) || 0;
 
   if (!item) { showToast('Please enter an item name.', 'error'); return; }
-  if (!qty) { showToast('Please enter a quantity.', 'error'); return; }
+  // If the display-qty field is empty (e.g. browser autofill bypassed oninput),
+  // fall back to the numeric qty + unit so the save is never silently blocked.
+  const resolvedQty = qty || (qtyNum > 0 ? `${qtyNum} ${unit}` : '');
+  if (!resolvedQty) { showToast('Please enter a quantity.', 'error'); return; }
+  // Keep qty in sync so the movement record always has a display string.
+  if (!qty && resolvedQty) document.getElementById('deliveryQty').value = resolvedQty;
 
   const dateKey = getLocalDateKey(); // FIXED: always use real today, not the date picker value
   const invData = loadInventoryData();
@@ -732,7 +744,7 @@ function saveDelivery() {
     id: Date.now(),
     type, // 'delivery' (stock in) or 'pullout' (stock out)
     item,
-    qty,
+    qty: resolvedQty,
     qtyNum,
     unit,
     supplier: type === 'delivery' ? (supplier || '—') : '—',
