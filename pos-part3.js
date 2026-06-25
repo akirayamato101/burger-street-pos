@@ -834,7 +834,7 @@ function renderInvModal() {
         <div style="text-align:center;font-weight:800;color:var(--blue);font-size:0.95rem;">${ing.qty||0}</div>
         <input type="number" class="input-field" value="${leftOver}" min="0" step="1" placeholder="0"
           style="padding:7px 6px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--green);border-color:rgba(16,185,129,0.4);"
-          oninput="invIngredients[${idx}].closingQty=parseInt(this.value)||0;updateActualDiff(${idx})" />
+          oninput="invIngredients[${idx}].closingQty=this.value===''?null:Math.max(0,parseInt(this.value,10)||0);updateActualDiff(${idx})" />
         <div>
           <input type="number" class="input-field" id="actualInp_${idx}" value="${hasActual ? ing.actualQty : ''}" min="0" step="1" placeholder="recount"
             style="padding:7px 6px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--orange);border-color:rgba(251,146,60,0.4);width:100%;"
@@ -979,8 +979,24 @@ function saveInvModal() {
       }
     });
     shift.closing = {
-      ingredients: invIngredients.map(i => ({...i})),
-      amounts: invAmounts.map(a => ({...a})),
+      // FIX: Only store the fields seedOpeningFromLastClosing and the closing
+      // modal actually need. Spreading {...i} was leaking usedQty into the
+      // saved closing, which made the next day's auto-seeded opening start
+      // with the wrong qty (opening.qty - leaked_usedQty instead of closingQty).
+      ingredients: invIngredients.map(({ name, unit, qty, closingQty, actualQty, notes }) => ({
+        name, unit,
+        qty,                                         // opening qty — shown as 'STARTED WITH'
+        closingQty: (closingQty !== null && closingQty !== undefined) ? closingQty : Math.max(0, qty || 0), // what's left at end of shift
+        actualQty:  actualQty !== undefined ? actualQty : null,
+        notes:      notes || ''
+      })),
+      amounts: invAmounts.map(({ name, amount, closingAmount, actualAmount, notes }) => ({
+        name,
+        amount,                                              // opening amount
+        closingAmount: closingAmount ?? amount ?? 0,        // what's left
+        actualAmount:  actualAmount !== undefined ? actualAmount : null,
+        notes:         notes || ''
+      })),
       cashier: cashierName,
       savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'})
     };
