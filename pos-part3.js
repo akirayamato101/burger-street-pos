@@ -1069,6 +1069,31 @@ function renderInventory() {
   const lastExistingShift = existingShifts.length ? existingShifts[existingShifts.length - 1] : null;
   const isAutoSeeded = !!(lastExistingShift && lastExistingShift.opening && lastExistingShift.opening.seededFrom);
   if (!existingShifts.length || !lastExistingShift || !lastExistingShift.opening || isAutoSeeded) {
+    // BUGFIX (auto-deduct / opening-carries-over bug): re-seeding rebuilds
+    // the opening from the source day's closing every time this page
+    // renders (so late deliveries/pull-outs on the source day get picked
+    // up — see comment above). But that rebuild used to throw away
+    // usedQty, which is THIS day's own live auto-deduct tracking (written
+    // by autoDeductIngredients() as sales happen today), not stale data
+    // from the source day. Losing it made auto-deduct look broken —
+    // remaining stock would jump back to the full opening qty every time
+    // the cashier simply reopened the Daily Inventory page — and it then
+    // corrupted the NEXT day's opening too, since that gets seeded from
+    // this day's closingQty, which the closing modal pre-fills from
+    // qty - usedQty (see openInvModal). Snapshot usedQty here and re-apply
+    // it (matched by ingredient/amount name) onto the freshly-seeded
+    // opening below, so today's sales are never lost by a re-seed.
+    const preservedIngUsed = {};
+    const preservedAmtUsed = {};
+    if (isAutoSeeded) {
+      ((lastExistingShift.opening.ingredients) || []).forEach(i => {
+        if (i.usedQty !== undefined) preservedIngUsed[(i.name || '').trim().toLowerCase()] = i.usedQty;
+      });
+      ((lastExistingShift.opening.amounts) || []).forEach(a => {
+        if (a.usedAmount !== undefined) preservedAmtUsed[(a.name || '').trim().toLowerCase()] = a.usedAmount;
+      });
+    }
+
     // Delete the stale auto-seeded opening so seedOpeningFromLastClosing
     // always generates a fresh one from the current source data.
     if (isAutoSeeded) {
@@ -1080,6 +1105,27 @@ function renderInventory() {
     }
     seedOpeningFromLastClosing(dateKey, data);
     data = loadInventoryData();
+
+    // Re-apply preserved usedQty/usedAmount onto the freshly-seeded opening.
+    if (isAutoSeeded && (Object.keys(preservedIngUsed).length || Object.keys(preservedAmtUsed).length)) {
+      const refreshedShift = getActiveShift(dateKey, data);
+      if (refreshedShift && refreshedShift.opening) {
+        (refreshedShift.opening.ingredients || []).forEach(i => {
+          const key = (i.name || '').trim().toLowerCase();
+          if (preservedIngUsed[key] !== undefined) {
+            // Cap to the new qty in case the re-seed changed available stock.
+            i.usedQty = Math.min(preservedIngUsed[key], i.qty || 0);
+          }
+        });
+        (refreshedShift.opening.amounts || []).forEach(a => {
+          const key = (a.name || '').trim().toLowerCase();
+          if (preservedAmtUsed[key] !== undefined) {
+            a.usedAmount = preservedAmtUsed[key];
+          }
+        });
+        saveInventoryData(data);
+      }
+    }
   }
 
   const dayShifts = getDayShifts(dateKey, data);
