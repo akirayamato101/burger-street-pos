@@ -1029,7 +1029,18 @@ function adjustIngredientsForOrderEdit(originalItems, newItems) {
     const delta = {};
     const addNeeded = (items, sign) => {
       items.forEach(item => {
-        const product = (posState.customProducts || []).find(p => p.id == item.id);
+        // BUGFIX: look up the product the SAME way the menu grid and stock
+        // validation do (allProducts — see validateCartAgainstStock), not
+        // just posState.customProducts. getInventoryProducts() merges in
+        // products from an older, separate inventory store (INV_KEY) that
+        // are sellable from the menu and pass stock validation, but were
+        // invisible here — so selling them silently deducted nothing,
+        // even though the sale itself went through fine. Fall back to
+        // posState.customProducts only if allProducts isn't populated yet.
+        const product = (typeof allProducts !== 'undefined' && allProducts.length
+          ? allProducts
+          : (posState.customProducts || [])
+        ).find(p => p.id == item.id);
         if (!product || !product.recipe || !product.recipe.length) return;
         product.recipe.forEach(r => {
           const key = (r.ingredient || '').trim().toLowerCase();
@@ -1081,7 +1092,17 @@ function autoDeductIngredients(soldItems) {
 
     let changed = false;
     soldItems.forEach(item => {
-      const product = (posState.customProducts || []).find(p => p.id == item.id);
+      // BUGFIX: same as adjustIngredientsForOrderEdit above — use allProducts
+      // (the merged list the menu grid actually sells from) so any product
+      // that came from the legacy INV_KEY merge in getInventoryProducts()
+      // is found here too. Previously this only checked
+      // posState.customProducts, so a sale of a merged-in product passed
+      // stock validation and completed normally, but deducted ZERO
+      // ingredients — looking exactly like "the sale wasn't recorded".
+      const product = (typeof allProducts !== 'undefined' && allProducts.length
+        ? allProducts
+        : (posState.customProducts || [])
+      ).find(p => p.id == item.id);
       if (!product || !product.recipe || !product.recipe.length) return;
       product.recipe.forEach(recipeItem => {
         const totalDeduct = recipeItem.qty * item.qty;
