@@ -1807,14 +1807,33 @@ function renderInventory() {
       const movedHint = netMoved !== 0
         ? `<span style="font-size:0.72rem;color:${netMoved < 0 ? 'var(--red)' : 'var(--green)'};margin-left:4px;">${netMoved < 0 ? netMoved : '+' + netMoved} ${netMoved < 0 ? 'pulled out' : 'delivered'}</span>`
         : '';
+      // PERMANENT FIX: this whole branch renders whenever NOT A SINGLE shift
+      // today has a saved closing — which is the common case while a shift
+      // is still actively open. It used to hardcode "—" for Closing/Used/
+      // Actual/Variance for every ingredient, completely ignoring live
+      // usedQty written by autoDeductIngredients() as sales happen. That
+      // made the official report look like zero activity occurred all day,
+      // even with dozens of recorded sales — exactly what was reported.
+      // Use live usedQty/remaining here too, tagged "(live)" so it's clear
+      // this isn't a finalized physical count yet.
+      const usedQty = opI ? (opI.usedQty || 0) : 0;
+      const remainingQty = opI ? Math.max(0, openQty - usedQty) : 0;
+      const hasLiveUsage = usedQty > 0;
+      const ingThresholdO = getIngredientThreshold(name);
+      const isLowO = ingThresholdO !== null && remainingQty > 0 && remainingQty <= ingThresholdO;
+      const statusO = remainingQty === 0 && openQty > 0
+        ? `<span style="color:var(--red);font-weight:700;">⚡ Empty</span>`
+        : isLowO
+          ? `<span style="color:var(--orange);font-weight:700;">⚡ Low Stock</span>`
+          : `<span style="color:var(--green);font-weight:700;">✓ OK</span>`;
       rows += `<tr>
         <td><b>${escHtml(name)}</b> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span>${movedHint}</td>
         <td style="color:var(--green);font-weight:700;">${openQty} ${escHtml(unit)}</td>
+        <td style="color:${hasLiveUsage ? stockLevelColor(remainingQty, name) : 'var(--text3)'};">${hasLiveUsage ? `${remainingQty} ${escHtml(unit)} <span style="font-size:0.65rem;font-weight:700;">(live)</span>` : '—'}</td>
+        <td style="color:${hasLiveUsage ? 'var(--red)' : 'var(--text3)'};">${hasLiveUsage ? '-'+usedQty : '—'}</td>
         <td style="color:var(--text3);">—</td>
         <td style="color:var(--text3);">—</td>
-        <td style="color:var(--text3);">—</td>
-        <td style="color:var(--text3);">—</td>
-        <td><span style="color:var(--green);font-weight:700;">✓ OK</span></td>
+        <td>${statusO}</td>
       </tr>`;
     });
 
