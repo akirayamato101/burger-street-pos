@@ -979,21 +979,20 @@ function saveInvModal() {
       }
     });
     shift.closing = {
-      // FIX: Only store the fields seedOpeningFromLastClosing and the closing
-      // modal actually need. Spreading {...i} was leaking usedQty into the
-      // saved closing, which made the next day's auto-seeded opening start
-      // with the wrong qty (opening.qty - leaked_usedQty instead of closingQty).
+      // FIX: Only store fields needed for seeding; {...i} leaked usedQty
+      // into the closing record, making the next day's auto-seeded opening
+      // start with qty - usedQty instead of closingQty.
       ingredients: invIngredients.map(({ name, unit, qty, closingQty, actualQty, notes }) => ({
         name, unit,
-        qty,                                         // opening qty — shown as 'STARTED WITH'
-        closingQty: (closingQty !== null && closingQty !== undefined) ? closingQty : Math.max(0, qty || 0), // what's left at end of shift
+        qty,
+        closingQty: (closingQty !== null && closingQty !== undefined) ? closingQty : Math.max(0, qty || 0),
         actualQty:  actualQty !== undefined ? actualQty : null,
         notes:      notes || ''
       })),
       amounts: invAmounts.map(({ name, amount, closingAmount, actualAmount, notes }) => ({
         name,
-        amount,                                              // opening amount
-        closingAmount: closingAmount ?? amount ?? 0,        // what's left
+        amount,
+        closingAmount: closingAmount ?? amount ?? 0,
         actualAmount:  actualAmount !== undefined ? actualAmount : null,
         notes:         notes || ''
       })),
@@ -1387,6 +1386,11 @@ function renderInventory() {
   const closeAmtTotal = closeAmounts.length ? closeAmounts.reduce((s, a) => s + effectiveCashAmt(a), 0) : null;
   const usedAmt = closeAmtTotal !== null ? Math.max(0, openAmtTotal - closeAmtTotal) : null;
 
+  // Expenses for the viewed date — deducted from opening cash in the display
+  const dayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(dateKey));
+  const dayExpenseTotal = dayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const openCashAfterExpenses = Math.max(0, openAmtTotal - dayExpenseTotal);
+
   document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
   document.getElementById('invCloseTotal').textContent = closeAmtTotal !== null ? '₱' + fmt(closeAmtTotal) : '—';
   const ingCountEl = document.getElementById('invIngCount');
@@ -1450,6 +1454,27 @@ function renderInventory() {
         <span style="font-weight:800;color:var(--blue);">₱${fmt(a.amount||0)}</span>
       </div>`).join('');
     openHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH TOTAL</span><span style="color:var(--blue);">₱${fmt(openAmtTotal)}</span></div>`;
+    if (dayExpenseTotal > 0) {
+      openHTML += `
+        <div style="display:flex;justify-content:space-between;padding-top:6px;font-size:0.85rem;color:var(--orange);">
+          <span>− Expenses / Cash-outs</span>
+          <span style="font-weight:800;">−₱${fmt(dayExpenseTotal)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding-top:6px;font-weight:800;font-size:0.95rem;border-top:2px solid var(--border);margin-top:6px;">
+          <span>REMAINING CASH</span>
+          <span style="color:${openCashAfterExpenses <= 0 ? 'var(--red)' : 'var(--green)'};">₱${fmt(openCashAfterExpenses)}</span>
+        </div>`;
+      // Itemised expense breakdown under the opening cash section
+      openHTML += `<div style="margin-top:8px;border-left:3px solid rgba(251,146,60,0.4);padding-left:10px;">`;
+      dayExpenses.forEach(e => {
+        const t = new Date(e.datetime).toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'});
+        openHTML += `<div style="display:flex;justify-content:space-between;font-size:0.78rem;padding:2px 0;color:var(--text2);">
+          <span>🔸 ${escHtml(e.desc)}${e.category ? ' ('+escHtml(e.category)+')' : ''} <span style="color:var(--text3);">${t}</span></span>
+          <span style="font-weight:700;color:var(--orange);">−₱${fmt(e.amount)}</span>
+        </div>`;
+      });
+      openHTML += `</div>`;
+    }
   }
   openingList.innerHTML = openHTML || `<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No opening inventory set.</p>`;
 
@@ -1780,6 +1805,7 @@ function renderInventory() {
     }
 
     // Balance check — first shift opening, last shift closing (actual count overrides closingAmount)
+    // Expenses are now factored in: Opening − Expenses − Closing = operational cash used
     const firstShift = dayShifts[0];
     const lastShift  = dayShifts[dayShifts.length - 1];
     const lastShiftClosed = lastShift?.closing && (lastShift.closing.amounts||[]).length > 0;
@@ -1795,21 +1821,27 @@ function renderInventory() {
           return a + (v || 0);
         }, 0)
       : null;
-    const totalUsedCash  = totalCloseCash !== null ? Math.max(0, totalOpenCash - totalCloseCash) : null;
-    const isBalanced = totalCloseCash !== null && Math.abs(totalOpenCash - totalCloseCash) < 0.01;
+    // Cash used by operations = Opening − Expenses − Closing.
+    // Without subtracting expenses, a ₱500 Gasul expense would show as
+    // ₱500 "discrepancy" even though the cashier correctly spent it.
+    const cashAfterExpenses = Math.max(0, totalOpenCash - dayExpenseTotal);
+    const totalUsedCash  = totalCloseCash !== null ? Math.max(0, cashAfterExpenses - totalCloseCash) : null;
+    const isBalanced = totalCloseCash !== null && Math.abs(cashAfterExpenses - totalCloseCash) < 0.01;
     const balanceEl = document.getElementById('invBalanceCheck');
     balanceEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div><div style="font-size:1.2rem;font-weight:800;color:var(--red);">${totalUsedCash !== null ? '-₱'+fmt(totalUsedCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">${totalCloseCash !== null ? '₱'+fmt(totalCloseCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;">
+        <div style="text-align:center;"><div style="font-size:0.7rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.15rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
+        ${dayExpenseTotal > 0 ? `<div style="text-align:center;"><div style="font-size:0.7rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">EXPENSES</div><div style="font-size:1.15rem;font-weight:800;color:var(--orange);">−₱${fmt(dayExpenseTotal)}</div><div style="font-size:0.68rem;color:var(--text3);">${dayExpenses.length} item${dayExpenses.length!==1?'s':''}</div></div>` : ''}
+        <div style="text-align:center;"><div style="font-size:0.7rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">${dayExpenseTotal > 0 ? 'CASH LEFT' : 'CASH USED'}</div><div style="font-size:1.15rem;font-weight:800;color:var(--red);">${totalUsedCash !== null ? '-₱'+fmt(totalUsedCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.7rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.15rem;font-weight:800;color:var(--green);">${totalCloseCash !== null ? '₱'+fmt(totalCloseCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
       </div>
+      ${dayExpenseTotal > 0 ? `<div style="font-size:0.75rem;color:var(--text3);text-align:center;margin-bottom:10px;">Balance = Opening (₱${fmt(totalOpenCash)}) − Expenses (₱${fmt(dayExpenseTotal)}) − Closing cash</div>` : ''}
       <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${!lastShiftClosed?'rgba(234,179,8,0.1)':isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${!lastShiftClosed?'rgba(234,179,8,0.4)':isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
         ${!lastShiftClosed
           ? `<span style="font-size:1.3rem;">🕐</span> <span style="font-weight:800;color:#eab308;font-size:1rem;">Shift not yet closed — no balance data available</span>`
           : isBalanced
             ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>`
-            : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash))}</span>`}
+            : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(cashAfterExpenses - totalCloseCash))}</span>`}
       </div>`;
     balanceEl.style.background = 'var(--card-bg)';
     balanceEl.style.borderColor = isBalanced ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
@@ -1893,23 +1925,29 @@ function renderInventory() {
 
     tbody.innerHTML = rows || '<tr><td colspan="7" style="text-align:center;color:var(--text3);">No opening inventory set.</td></tr>';
 
-    // Cash summary — opening only
+    // Cash summary — opening only (shift still open)
     const balanceEl = document.getElementById('invBalanceCheck');
     if (balanceEl) {
       const totalOpenCash = openAmounts.reduce((s, a) => s + (a.amount || 0), 0);
+      const openCashRemainingLive = Math.max(0, totalOpenCash - dayExpenseTotal);
       balanceEl.innerHTML = `
-        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:12px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
           <div style="text-align:center;">
-            <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div>
-            <div style="font-size:1.3rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div>
+            <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div>
+            <div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div>
           </div>
+          ${dayExpenseTotal > 0 ? `<div style="text-align:center;">
+            <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">EXPENSES</div>
+            <div style="font-size:1.2rem;font-weight:800;color:var(--orange);">−₱${fmt(dayExpenseTotal)}</div>
+            <div style="font-size:0.68rem;color:var(--text3);">${dayExpenses.length} item${dayExpenses.length!==1?'s':''}</div>
+          </div>` : ''}
+          ${dayExpenseTotal > 0 ? `<div style="text-align:center;">
+            <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">REMAINING</div>
+            <div style="font-size:1.2rem;font-weight:800;color:${openCashRemainingLive<=0?'var(--red)':'var(--green)'};">₱${fmt(openCashRemainingLive)}</div>
+          </div>` : ''}
           <div style="text-align:center;">
-            <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">CASH USED</div>
-            <div style="font-size:1.3rem;font-weight:800;color:var(--text3);">—</div>
-          </div>
-          <div style="text-align:center;">
-            <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div>
-            <div style="font-size:1.3rem;font-weight:800;color:var(--text3);">—</div>
+            <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div>
+            <div style="font-size:1.2rem;font-weight:800;color:var(--text3);">—</div>
           </div>
         </div>
         <div style="padding:14px 20px;border-radius:12px;border:1.5px solid rgba(234,179,8,0.4);background:rgba(234,179,8,0.07);text-align:center;">
@@ -1981,6 +2019,8 @@ function saveExpense() {
   saveExpenses(expenses);
   closeExpenseModal();
   renderExpenseLog();
+  // Refresh inventory so opening cash section reflects new expense immediately
+  if (document.getElementById('invOpeningList')) renderInventory();
   showToast(`✅ Expense of ₱${fmt(amount)} recorded.`, 'success');
 }
 
@@ -1989,6 +2029,7 @@ function deleteExpense(id) {
   const expenses = loadExpenses().filter(e => e.id !== id);
   saveExpenses(expenses);
   renderExpenseLog();
+  if (document.getElementById('invOpeningList')) renderInventory();
   showToast('Expense deleted.', '');
 }
 
