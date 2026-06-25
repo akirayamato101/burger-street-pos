@@ -717,9 +717,13 @@ function saveDelivery() {
     const activeShift = invData[dateKey].shifts[activeShiftIdx];
     const ings = activeShift.opening?.ingredients || [];
     const existing = ings.find(i => i.name.trim().toLowerCase() === item.toLowerCase());
-    const currentQty = existing ? (existing.qty || 0) : 0;
+    // Use actual remaining stock (opening qty minus sales already made today),
+    // not raw opening qty — otherwise the warning shows the wrong number when
+    // sales have already happened (e.g. opened 80, sold 48, remaining 32, but
+    // warning used to say "Only 80 in stock" instead of the correct "Only 32").
+    const currentQty = existing ? Math.max(0, (existing.qty || 0) - (existing.usedQty || 0)) : 0;
     if (qtyNum > currentQty) {
-      const proceed = confirm(`⚠️ Only ${currentQty} ${unit} of "${item}" is currently in stock, but you're pulling out ${qtyNum}. Continue anyway? (Stock will be set to 0.)`);
+      const proceed = confirm(`⚠️ Only ${currentQty} ${unit} of "${item}" is currently on the shelf, but you're pulling out ${qtyNum}. Continue anyway? (Stock will be set to 0.)`);
       if (!proceed) return;
     }
   }

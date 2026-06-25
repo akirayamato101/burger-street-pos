@@ -426,70 +426,33 @@ function seedOpeningFromLastClosing(dateKey, invData) {
   let lastOpeningFallback = null;
   let fallbackFrom = null;
 
-  // Check other shifts on same day first — search backwards through ALL prior
-  // shifts (not just the immediately preceding one) to find the most recent
-  // shift that has a closing. Only fall back to an opening if no prior shift
-  // on this day has a closing at all.
+  // Check other shifts on same day first
   if (shifts.length > 1) {
-    let foundSameDayClosing = false;
-    for (let si = shifts.length - 2; si >= 0; si--) {
-      if (shifts[si] && shifts[si].closing) {
-        lastClosing = shifts[si].closing;
-        seededFrom = 'previous shift';
-        foundSameDayClosing = true;
-        break;
-      }
-    }
-    if (!foundSameDayClosing) {
-      // No closing on any prior shift — use the most recent prior opening
-      for (let si = shifts.length - 2; si >= 0; si--) {
-        if (shifts[si] && shifts[si].opening) {
-          lastOpeningFallback = shifts[si].opening;
-          fallbackFrom = dateKey;
-          break;
-        }
-      }
-    }
+    const prev = shifts[shifts.length - 2];
+    if (prev.closing) { lastClosing = prev.closing; seededFrom = dateKey; }
+    else if (prev.opening) { lastOpeningFallback = prev.opening; fallbackFrom = dateKey; }
   }
 
   // Otherwise look at previous days. We want the MOST RECENT day that has
-  // any record at all. Within that most recent day, prefer the MOST RECENT
-  // SHIFT THAT HAS A CLOSING — even if a later shift on the same day has no
-  // closing yet (e.g. S2 is still open when the day ends). Only fall back to
-  // the last opening on the most recent day when NO shift on that day has
-  // any closing at all.
-  // BUG THAT WAS HERE: the old code only checked `lastPrevShift` (the last/
-  // most recent shift). If that shift had no closing, it immediately used its
-  // opening as the fallback — ignoring earlier shifts on the SAME day that
-  // DID have a closing. This caused today's opening to be seeded as
-  // (S2_open_qty - S2_usedQty) = (80 - 16) = 64 instead of the correct
-  // S1 closing qty of 80, because the unclosed S2 was examined first and
-  // the closed S1 was never reached.
+  // any record at all. Within that most recent day, prefer its closing;
+  // if that day only has an opening (cashier edited opening but never
+  // saved a closing), use that opening instead — do NOT skip past it to
+  // search for a closing on some older day. Skipping past it was the bug:
+  // a deliberate opening edit (e.g. setting everything to 0 to test) on
+  // the most recent day was being ignored in favor of stale data from
+  // days further back that happened to have a closing saved.
   if (!lastClosing) {
     const dates = Object.keys(invData)
       .filter(d => d < dateKey)
       .sort();
     for (let i = dates.length - 1; i >= 0; i--) {
       const prevShifts = getDayShifts(dates[i], invData);
-      // Search backwards through shifts on this day to find the most recent
-      // shift that has a closing. If none have a closing, fall back to the
-      // most recent shift that has an opening.
-      let foundClosing = false;
-      for (let si = prevShifts.length - 1; si >= 0; si--) {
-        if (prevShifts[si] && prevShifts[si].closing) {
-          lastClosing = prevShifts[si].closing;
-          seededFrom = dates[i];
-          foundClosing = true;
-          break;
-        }
-      }
-      if (foundClosing) break;
-      // No closing found on this day — use the most recent opening as fallback.
-      // Do NOT skip past this day to search for a closing on some older day.
-      // Skipping past it was the original bug: a deliberate opening edit on
-      // the most recent day was being ignored in favour of stale data from
-      // days further back that happened to have a closing saved.
       const lastPrevShift = prevShifts[prevShifts.length - 1];
+      if (lastPrevShift && lastPrevShift.closing) {
+        lastClosing = lastPrevShift.closing;
+        seededFrom = dates[i];
+        break;
+      }
       if (lastPrevShift && lastPrevShift.opening) {
         lastOpeningFallback = lastPrevShift.opening;
         fallbackFrom = dates[i];
@@ -745,7 +708,12 @@ function openInvModal(type) {
       ? op.amounts
       : tpl.amounts.map(a => ({ ...a, amount: 0 }))
     ).map(a => ({...a}));
-    document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply do you have for today? (count in pieces, packs, bags, etc.)';
+    // Show a note if sales have already happened today — so the cashier
+    // understands why the number they type here differs from what's on the shelf.
+    const hasSales = invIngredients.some(i => (i.usedQty || 0) > 0);
+    document.getElementById('invIngDesc').textContent = hasSales
+      ? 'Edit the opening count (what you STARTED with). Sales already deducted today are shown below each item.'
+      : 'How many of each ingredient/supply do you have for today? (count in pieces, packs, bags, etc.)';
     document.getElementById('invAmtDesc').textContent = 'Enter the peso amount for today. (e.g. pocket money for change, petty cash, fund)';
   } else {
     const op = activeShift.opening || {};
@@ -804,25 +772,44 @@ function renderInvModal() {
 
   if (!isClosing) {
     ingHeader.style.gridTemplateColumns = '1fr 90px 90px 32px';
+    const hasSalesHeader = invIngredients.some(i => (i.usedQty || 0) > 0);
     ingHeader.innerHTML = `
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">INGREDIENT / SUPPLY</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">UNIT</span>
-      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">QTY FOR TODAY</span>
+      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">${hasSalesHeader ? 'ON SHELF NOW' : 'QTY FOR TODAY'}</span>
       <span></span>`;
 
-    ingList.innerHTML = invIngredients.map((ing, idx) => `
-      <div style="display:grid;grid-template-columns:1fr 90px 90px 32px;gap:8px;align-items:center;margin-bottom:8px;">
-        <input type="text" class="input-field" value="${escHtml(ing.name||'')}" placeholder="e.g. Burger Patty"
-          style="padding:7px 10px;font-size:0.85rem;"
-          oninput="invIngredients[${idx}].name=this.value" />
-        <input type="text" class="input-field" value="${escHtml(ing.unit||'pcs')}" placeholder="pcs"
-          style="padding:7px 10px;font-size:0.85rem;text-align:center;"
-          oninput="invIngredients[${idx}].unit=this.value" />
-        <input type="number" class="input-field" value="${ing.qty||0}" min="0" step="1" placeholder="0"
-          style="padding:7px 10px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--orange);"
-          oninput="invIngredients[${idx}].qty=parseInt(this.value)||0" />
-        <button class="inv-del-btn" onclick="removeIngredient(${idx})">✕</button>
-      </div>`).join('');
+    ingList.innerHTML = invIngredients.map((ing, idx) => {
+      const soldToday = ing.usedQty || 0;
+      const remaining = Math.max(0, (ing.qty || 0) - soldToday);
+      const hasSales = soldToday > 0;
+      // Show the remaining (on-shelf) qty in the input, not the raw opening qty.
+      // Deliveries/pull-outs already adjust opening qty directly, so they naturally
+      // show up in ing.qty. Sales are tracked separately via usedQty — subtracting
+      // them here makes the modal consistent: the number shown is always "what's
+      // physically on your shelf right now."
+      // When saved, we write back (remaining) as the new qty and reset usedQty to 0,
+      // because the cashier is now confirming the current count from scratch.
+      const displayQty = hasSales ? remaining : (ing.qty || 0);
+      return `
+      <div style="margin-bottom:${hasSales ? '12px' : '8px'};">
+        <div style="display:grid;grid-template-columns:1fr 90px 90px 32px;gap:8px;align-items:center;">
+          <input type="text" class="input-field" value="${escHtml(ing.name||'')}" placeholder="e.g. Burger Patty"
+            style="padding:7px 10px;font-size:0.85rem;"
+            oninput="invIngredients[${idx}].name=this.value" />
+          <input type="text" class="input-field" value="${escHtml(ing.unit||'pcs')}" placeholder="pcs"
+            style="padding:7px 10px;font-size:0.85rem;text-align:center;"
+            oninput="invIngredients[${idx}].unit=this.value" />
+          <input type="number" class="input-field" value="${displayQty}" min="0" step="1" placeholder="0"
+            style="padding:7px 10px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--orange);"
+            oninput="invIngredients[${idx}].qty=parseInt(this.value)||0" />
+          <button class="inv-del-btn" onclick="removeIngredient(${idx})">✕</button>
+        </div>
+        ${hasSales ? `<div style="font-size:0.72rem;margin-top:3px;padding-left:4px;display:flex;gap:12px;">
+          <span style="color:var(--red);">🔥 −${soldToday} sold today already deducted</span>
+        </div>` : ''}
+      </div>`;
+    }).join('');
 
   } else {
     // Closing ingredients: show opening qty, input closing qty
