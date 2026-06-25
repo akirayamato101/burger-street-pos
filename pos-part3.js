@@ -1543,7 +1543,19 @@ function renderInventory() {
         // check) wrongly subtracted mid-shift deliveries too, which were already
         // reflected in the cashier's closing count, distorting Used/shrinkage.
         const postClosingDelta = postClosingNetQtyFor(name, 0);
-        const usedQty  = endQty !== null ? Math.max(0, (startQty - postClosingDelta) - endQty) : null;
+        // PERMANENT FIX: a shift with no saved closing yet used to show "—"
+        // (blank) for Used/Closing here, even when sales had already been
+        // auto-deducted live (opI.usedQty) — making the official report look
+        // like zero activity happened, while the live Opening Inventory card
+        // above correctly showed "−N sold". Fall back to the LIVE usedQty so
+        // the report always reflects real activity, not just finalized
+        // closings. liveUsedQty/liveRemaining are clearly distinguished from
+        // a real saved closing via the "(live)" tag below — they are an
+        // in-progress snapshot, not a locked-in physical count.
+        const hasLiveTracking = !clI && opI && (opI.usedQty || 0) > 0;
+        const liveUsedQty = hasLiveTracking ? (opI.usedQty || 0) : null;
+        const liveRemaining = hasLiveTracking ? Math.max(0, startQty - liveUsedQty) : null;
+        const usedQty  = endQty !== null ? Math.max(0, (startQty - postClosingDelta) - endQty) : liveUsedQty;
         unit = opI?.unit || clI?.unit || 'pcs';
         const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
         const actualQty = hasActual ? clI.actualQty : null;
@@ -1557,16 +1569,21 @@ function renderInventory() {
         const shortAmount = (hasActual && actualQty < endQty) ? (endQty - actualQty) : 0;
         if (shortAmount > 0) totalShorts++;
         const ingThreshold = getIngredientThreshold(name);
-        const effectiveClose = hasActual ? actualQty : endQty;
+        const effectiveClose = hasActual ? actualQty : (endQty !== null ? endQty : liveRemaining);
         const isCloseLow = ingThreshold !== null && effectiveClose !== null && effectiveClose > 0 && effectiveClose <= ingThreshold;
         let status = shortAmount > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ${shortAmount} ${escHtml(unit)}</span>`
-          : (endQty === 0 || (hasActual && actualQty === 0)) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
+          : (endQty === 0 || (hasActual && actualQty === 0) || liveRemaining === 0) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
           : isCloseLow ? `<span class="inv-status-tag inv-tag-low">⚡ Low Stock</span>`
           : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
+        const closingCellContent = endQty !== null
+          ? endQty+' '+escHtml(unit)
+          : (liveRemaining !== null
+              ? `${liveRemaining} ${escHtml(unit)} <span style="font-size:0.68rem;color:var(--text3);font-weight:700;">(live)</span>`
+              : '<span style="color:var(--text3);font-size:0.78rem;">—</span>');
         rows += `<tr>
           <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
           <td style="color:${stockLevelColor(startQty, name)};">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.68rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>
-          <td style="color:${endQty !== null ? stockLevelColor(endQty, name) : ''};">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
+          <td style="color:${endQty !== null ? stockLevelColor(endQty, name) : (liveRemaining !== null ? stockLevelColor(liveRemaining, name) : '')};">${closingCellContent}</td>
           <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty !== null ? (usedQty > 0 ? '-'+usedQty : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${hasActual ? stockLevelColor(actualQty, name) : ''};font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${vColor};font-weight:800;">${vLabel}</td>
@@ -1588,17 +1605,33 @@ function renderInventory() {
           // double-counted it (the old `s.closing ? ... : 0` check couldn't
           // tell "closed, movement was before" from "closed, movement was after").
           const postClosingDelta = postClosingNetQtyFor(name, si);
-          const usedQty  = (endQty !== null) ? Math.max(0, (startQty - postClosingDelta) - endQty) : 0;
+          // PERMANENT FIX: a shift with no saved closing yet (endQty === null)
+          // used to report 0 Used here even when sales had already been
+          // auto-deducted live onto opI.usedQty — so an in-progress shift
+          // with real sales showed "—" for Used and the full undeducted
+          // qty for everything downstream (Total Used, Status), completely
+          // hiding that activity from the official report. Fall back to the
+          // live usedQty/remaining for any shift that hasn't been closed yet.
+          const hasLiveTrackingI = !clI && opI && (opI.usedQty || 0) > 0;
+          const liveUsedQtyI = hasLiveTrackingI ? (opI.usedQty || 0) : null;
+          const liveRemainingI = hasLiveTrackingI ? Math.max(0, startQty - liveUsedQtyI) : null;
+          const usedQty  = (endQty !== null) ? Math.max(0, (startQty - postClosingDelta) - endQty) : (liveUsedQtyI || 0);
           unit = opI?.unit || clI?.unit || unit;
           totalUsed += usedQty;
-          lastEndQty = endQty;
+          // lastEndQty drives the "Empty"/"Low Stock" status below — when this
+          // shift is still open, fall back to the live remaining qty so an
+          // in-progress shift that's actually run low/out is correctly
+          // flagged instead of being skipped because endQty is null.
+          lastEndQty = endQty !== null ? endQty : (liveRemainingI !== null ? liveRemainingI : lastEndQty);
           if (opI && startQty > 0) everHadStock = true;
           const hasActualI = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
           const actualQtyI = hasActualI ? clI.actualQty : null;
           const shortQtyI  = (hasActualI && endQty !== null) ? Math.max(0, endQty - actualQtyI) : null;
           if (shortQtyI !== null && shortQtyI > 0) { totalShorts++; totalShortQty += shortQtyI; }
+          const closeCellI = clI ? (endQty ?? '—')
+            : (liveRemainingI !== null ? `${liveRemainingI} <span style="font-size:0.65rem;color:var(--text3);font-weight:700;">(live)</span>` : '—');
           cols += `<td style="color:${opI ? stockLevelColor(startQty, name) : ''};">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.65rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>`;
-          cols += `<td style="color:${clI && endQty !== null ? stockLevelColor(endQty, name) : ''};">${clI ? (endQty ?? '—') : '—'}</td>`;
+          cols += `<td style="color:${clI && endQty !== null ? stockLevelColor(endQty, name) : (liveRemainingI !== null ? stockLevelColor(liveRemainingI, name) : '')};">${closeCellI}</td>`;
           cols += `<td style="color:${hasActualI ? stockLevelColor(actualQtyI, name) : ''};font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${shortQtyI>0?'var(--red)':'var(--text3);'}font-weight:${shortQtyI>0?'800':'400'};">${shortQtyI !== null ? (shortQtyI > 0 ? '-'+shortQtyI : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>`;
