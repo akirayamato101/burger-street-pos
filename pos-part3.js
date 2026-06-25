@@ -489,14 +489,25 @@ function seedOpeningFromLastClosing(dateKey, invData) {
     };
   } else if (lastOpeningFallback) {
     // Fallback: cashier never closed — carry the opening forward.
-    // FIX: Only copy clean fields — never carry usedQty/closingQty/actualQty
-    // into the next day's opening as those are previous-shift tracking state.
+    // PERMANENT FIX: the source day may still have LIVE auto-deduct tracking
+    // (usedQty) on it — e.g. it's today, sales already happened, but no
+    // closing has been saved yet. That usedQty is real, current stock
+    // movement, not stale leftover state. The old code copied the raw
+    // opening qty and ignored usedQty entirely, so jumping to any date with
+    // no record of its own (including a future date, or "today" before its
+    // closing exists) seeded a FULL, undeducted qty — looking exactly like
+    // auto-deduct never ran. Net usedQty out of qty here so the carried-
+    // forward number reflects what's actually left, while still never
+    // writing a usedQty field itself into the new opening (the field
+    // belongs to the source shift's own tracking, not the new day's).
     newOpening = {
       ingredients: (lastOpeningFallback.ingredients || []).map(i => ({
-        name: i.name, unit: i.unit, qty: (i.qty ?? 0)
+        name: i.name, unit: i.unit,
+        qty: Math.max(0, (i.qty ?? 0) - (i.usedQty ?? 0))
       })),
       amounts: (lastOpeningFallback.amounts || []).map(a => ({
-        name: a.name, amount: (a.amount ?? 0)
+        name: a.name,
+        amount: Math.max(0, (a.amount ?? 0) - (a.usedAmount ?? 0))
       })),
       seededFrom: fallbackFrom
     };
