@@ -500,15 +500,35 @@ function seedOpeningFromLastClosing(dateKey, invData) {
     // forward number reflects what's actually left, while still never
     // writing a usedQty field itself into the new opening (the field
     // belongs to the source shift's own tracking, not the new day's).
+    //
+    // BUGFIX (cash not carrying over correctly when no closing was done):
+    // For cash `amounts`, usedAmount is NEVER written anywhere in this app —
+    // there is no live auto-deduct for cash the way there is for ingredient
+    // usedQty. The only thing that actually reduces cash during the day is
+    // an Expense record (saveExpense(), keyed by date). So netting out
+    // usedAmount here always nets out 0, and the fallback silently carried
+    // the FULL prior amount forward forever (e.g. opened with ₱4,000,
+    // ₱780 in expenses logged, never closed → next day still seeded ₱4,000
+    // instead of ₱3,220). Deduct that source day's actual logged expenses
+    // instead, distributed proportionally across the named amount items
+    // (same approach already used when pre-filling the closing modal), so
+    // the carried-forward cash always reflects what was really spent.
+    const fallbackExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(fallbackFrom));
+    const fallbackExpenseTotal = fallbackExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+    const fallbackOpenTotal = (lastOpeningFallback.amounts || []).reduce((s, a) => s + (a.amount || 0), 0);
     newOpening = {
       ingredients: (lastOpeningFallback.ingredients || []).map(i => ({
         name: i.name, unit: i.unit,
         qty: Math.max(0, (i.qty ?? 0) - (i.usedQty ?? 0))
       })),
-      amounts: (lastOpeningFallback.amounts || []).map(a => ({
-        name: a.name,
-        amount: Math.max(0, (a.amount ?? 0) - (a.usedAmount ?? 0))
-      })),
+      amounts: (lastOpeningFallback.amounts || []).map(a => {
+        // Distribute the source day's expenses proportional to each item's
+        // share of that day's opening total — mirrors the closing-modal
+        // pre-fill logic so the two stay consistent with each other.
+        const share = fallbackOpenTotal > 0 ? (a.amount || 0) / fallbackOpenTotal : 0;
+        const deduction = Math.min(a.amount || 0, fallbackExpenseTotal * share);
+        return { name: a.name, amount: Math.max(0, (a.amount ?? 0) - deduction) };
+      }),
       seededFrom: fallbackFrom
     };
   } else {
