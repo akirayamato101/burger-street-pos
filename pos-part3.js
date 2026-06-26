@@ -1413,7 +1413,17 @@ function renderInventory() {
   const dayExpenseTotal = dayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
   const openCashAfterExpenses = Math.max(0, openAmtTotal - dayExpenseTotal);
 
-  document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
+  // BUGFIX (opening cash not reflecting today's expenses without a closing):
+  // This card used to always show the raw opening total (e.g. ₱4,000), even
+  // after expenses/cash-outs were logged against today (e.g. ₱780), because
+  // it read `openAmtTotal` instead of the already-computed expense-adjusted
+  // figure just above. The detailed breakdown further down the page (CASH
+  // TOTAL → − Expenses → REMAINING CASH) was already correct — only this
+  // headline summary card was stale. Using `openCashAfterExpenses` here
+  // makes the two agree, and — since it's driven purely by loadExpenses()
+  // for the viewed date — it stays correct live, with or without a closing
+  // ever being saved.
+  document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openCashAfterExpenses);
   document.getElementById('invCloseTotal').textContent = closeAmtTotal !== null ? '₱' + fmt(closeAmtTotal) : '—';
   const ingCountEl = document.getElementById('invIngCount');
   if (ingCountEl) ingCountEl.textContent = openIngredients.length + ' item' + (openIngredients.length !== 1 ? 's' : '');
