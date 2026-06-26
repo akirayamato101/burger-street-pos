@@ -725,38 +725,8 @@ function openInvModal(type) {
         ...i, closingQty: Math.max(0, (i.qty||0) - (i.usedQty||0))
       }));
     }
-    const todayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(dateKey));
-    const totalExpense  = todayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
-    const opAmounts     = op.amounts || [];
-    const openTotal     = opAmounts.reduce((s, a) => s + (a.amount || 0), 0);
-
     if (cl.amounts && cl.amounts.length) {
-      // Already-saved closing: apply expense deduction if the closing amount
-      // equals the opening amount (i.e. the cashier never manually adjusted it
-      // and it was saved with the stale pre-fill value).  This fixes the case
-      // where a closing was recorded before the expense-deduction pre-fill was
-      // in place, or was submitted without editing the auto-filled 4,000 field
-      // — so the report keeps showing 4,000 instead of 4,000 − 780 = 3,220.
-      //
-      // We only auto-correct when closingAmount === openingAmount AND expenses
-      // exist, because that is the fingerprint of an un-adjusted default fill.
-      // If the cashier deliberately left it at the opening value (e.g. all
-      // expenses were reimbursed), they would have set actualAmount instead,
-      // so this heuristic is safe.
-      invAmounts = cl.amounts.map(a => {
-        const opA = opAmounts.find(o => o.name === a.name);
-        const opAmt = opA ? (opA.amount || 0) : 0;
-        const savedClosing = parseFloat(a.closingAmount) || 0;
-        const needsCorrection = totalExpense > 0
-          && Math.abs(savedClosing - opAmt) < 0.01   // closing == opening → was never adjusted
-          && (a.actualAmount === null || a.actualAmount === undefined || a.actualAmount === '');
-        if (needsCorrection) {
-          const share     = openTotal > 0 ? opAmt / openTotal : 0;
-          const deduction = Math.min(opAmt, totalExpense * share);
-          return { ...a, closingAmount: Math.max(0, opAmt - deduction) };
-        }
-        return { ...a };
-      });
+      invAmounts = cl.amounts.map(a => ({...a}));
     } else {
       // FIX: Pre-fill closing amounts with (opening amount − today's expenses).
       // Without this, the default was the full opening amount, so if a cashier
@@ -769,6 +739,10 @@ function openInvModal(type) {
       // their pro-rata share of the total expense, floored at ₱0). This keeps
       // the individual item totals internally consistent while the overall
       // closing total correctly reflects what remains.
+      const todayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(dateKey));
+      const totalExpense  = todayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+      const opAmounts     = op.amounts || [];
+      const openTotal     = opAmounts.reduce((s, a) => s + (a.amount || 0), 0);
       invAmounts = opAmounts.map(a => {
         // Distribute expense proportional to each item's share of the opening total.
         // If opening total is 0 (degenerate), just leave each item unchanged.
@@ -1778,21 +1752,7 @@ function renderInventory() {
         // Use closingAmount strictly — do NOT fall back to clA.amount (opening value).
         // clA.amount is the opening amount carried on the closing record; falling back to it
         // makes the "used" column show 0 even when cash was actually spent.
-        //
-        // DISPLAY FIX: if the saved closingAmount equals the opening amount AND
-        // there are expenses for this day AND the cashier never set an actualAmount,
-        // the closing was submitted with the stale default pre-fill (before the
-        // expense-deduction fix was in place). Correct it on-the-fly so the report
-        // shows Opening − Expenses = Remaining instead of the raw 4,000.
-        const rawEndAmt = clA ? (clA.closingAmount ?? 0) : null;
-        const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
-        const endAmtNeedsCorrection = rawEndAmt !== null
-          && dayExpenseTotal > 0
-          && !hasActualAmt
-          && Math.abs(rawEndAmt - startAmt) < 0.01;   // closing == opening → was never adjusted
-        const endAmt = endAmtNeedsCorrection
-          ? Math.max(0, startAmt - dayExpenseTotal)
-          : rawEndAmt;
+        const endAmt   = clA ? (clA.closingAmount ?? 0) : null;
         const usedAmt2 = endAmt !== null ? Math.max(0, startAmt - endAmt) : null;
         const notes    = clA?.notes || '';
         const hasActualAmt = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
@@ -1831,23 +1791,12 @@ function renderInventory() {
           // (not 0). Defaulting to 0 was the bug: it made usedAmt2 = startAmt - 0
           // = the full opening amount (e.g. ₱950), so an unclosed shift always
           // showed 100% of opening cash as "used" even when nothing was spent.
-          //
-          // DISPLAY FIX: if closingAmount == openingAmount, expenses exist, and
-          // no actualAmount was set, the cashier never adjusted the default fill;
-          // correct on-the-fly: effective closing = opening − expenses.
-          const rawEndAmt = clA ? (clA.closingAmount ?? 0) : null;
-          const hasActualA = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
-          const endAmtNeedsCorrection = rawEndAmt !== null
-            && dayExpenseTotal > 0
-            && !hasActualA
-            && Math.abs(rawEndAmt - startAmt) < 0.01;
-          const endAmt = endAmtNeedsCorrection
-            ? Math.max(0, startAmt - dayExpenseTotal)
-            : rawEndAmt;
+          const endAmt   = clA ? (clA.closingAmount ?? 0) : null;
           const usedAmt2 = (opA && clA && endAmt !== null) ? Math.max(0, startAmt - endAmt) : 0;
           totalUsedAmt += usedAmt2;
           lastEndAmt = endAmt;
           if (opA && startAmt > 0) everHadAmt = true;
+          const hasActualA = clA && clA.actualAmount !== undefined && clA.actualAmount !== null && clA.actualAmount !== '';
           const actualAmtA = hasActualA ? parseFloat(clA.actualAmount) : null;
           const shortAmtA  = (hasActualA && endAmt !== null) ? Math.max(0, endAmt - actualAmtA) : null;
           if (shortAmtA !== null && shortAmtA > 0) { totalShorts++; totalShortAmtVal += shortAmtA; }
