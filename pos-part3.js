@@ -728,7 +728,29 @@ function openInvModal(type) {
     if (cl.amounts && cl.amounts.length) {
       invAmounts = cl.amounts.map(a => ({...a}));
     } else {
-      invAmounts = (op.amounts || []).map(a => ({...a, closingAmount: a.amount, notes: ''}));
+      // FIX: Pre-fill closing amounts with (opening amount − today's expenses).
+      // Without this, the default was the full opening amount, so if a cashier
+      // skipped adjusting the field manually, the next day seeded from the
+      // gross opening total (e.g. ₱4,000) instead of what was actually left
+      // after expenses (e.g. ₱4,000 − ₱780 = ₱3,220).
+      //
+      // Expenses are deducted proportionally across all named amount items
+      // (e.g. "Pocket Money ₱1,000" and "Cash on Hand ₱3,000" each absorb
+      // their pro-rata share of the total expense, floored at ₱0). This keeps
+      // the individual item totals internally consistent while the overall
+      // closing total correctly reflects what remains.
+      const todayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(dateKey));
+      const totalExpense  = todayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+      const opAmounts     = op.amounts || [];
+      const openTotal     = opAmounts.reduce((s, a) => s + (a.amount || 0), 0);
+      invAmounts = opAmounts.map(a => {
+        // Distribute expense proportional to each item's share of the opening total.
+        // If opening total is 0 (degenerate), just leave each item unchanged.
+        const share       = openTotal > 0 ? (a.amount || 0) / openTotal : 0;
+        const deduction   = Math.min(a.amount || 0, totalExpense * share);
+        const closingAmt  = Math.max(0, (a.amount || 0) - deduction);
+        return { ...a, closingAmount: closingAmt, notes: '' };
+      });
     }
     document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply is LEFT at the end of the shift?';
     document.getElementById('invAmtDesc').textContent = 'How much cash / amount is LEFT at the end of the shift?';
