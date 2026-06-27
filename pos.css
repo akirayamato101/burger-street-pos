@@ -1591,48 +1591,141 @@
       .summary-cards { grid-template-columns: 1fr 1fr; }
     }
 
-    /* ----- Phone landscape (≤700px wide but landscape orientation):
-       Show both panels side-by-side like a mini-tablet so the POS
-       is actually usable without needing the fullscreen cart overlay. ----- */
+    /* ----- Phone landscape (≤700px wide, landscape orientation):
+       Tab-based layout — each panel gets full-screen width,
+       switched via a bottom tab bar. Far more usable than trying
+       to squeeze two panels side-by-side on a small phone. ----- */
     @media (max-width: 700px) and (orientation: landscape) {
-      /* Re-enable the side-by-side POS layout */
-      .pos-layout {
-        grid-template-columns: 1fr clamp(240px, 38%, 360px);
+
+      /* Collapse top navbar to minimum height */
+      .sidebar { min-height: 44px; padding: 0 8px; }
+      .sidebar-header { padding: 4px 0; }
+      .brand-sub { display: none; }
+      .nav-logo { width: 30px; height: 30px; font-size: 0.95rem; }
+      .brand-name { font-size: 0.9rem; }
+
+      /* POS page fills the available height */
+      #page-pos, #page-pos.active {
+        display: flex;
+        flex-direction: column;
         height: 100%;
         overflow: hidden;
-        padding: 8px 12px 8px;
+        padding: 0 !important;
       }
-      #page-pos { height: 100%; }
-      #page-pos.active { display: flex; flex-direction: column; }
-      .menu-panel { min-height: 0; height: auto; overflow: hidden; }
-      /* Show the order panel normally (not hidden) */
-      .order-panel { display: flex; }
-      /* If the cart overlay was triggered, reset it to inline mode */
-      .order-panel.show-mobile { position: relative; inset: auto; z-index: auto; border-radius: 18px; }
 
-      /* Tighten up the navbar to save vertical space in landscape */
-      .sidebar { min-height: 48px; }
-      .sidebar-header { padding: 6px 0; }
+      /* Single-column; bottom padding = tab bar height */
+      .pos-layout {
+        grid-template-columns: 1fr;
+        height: 100%;
+        overflow: hidden;
+        padding: 8px 10px calc(52px + env(safe-area-inset-bottom, 0px));
+      }
 
-      /* Make menu grid items shorter so more fit on screen */
+      /* Menu panel: full width, scrollable */
+      .menu-panel {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: hidden;
+      }
       .menu-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
-      .menu-item { padding: 10px 10px; }
-      .menu-item-emoji { font-size: 1.5rem; }
+      .menu-item { padding: 9px 10px; }
+      .menu-item-emoji { font-size: 1.45rem; }
+      .search-bar { margin-bottom: 8px; }
+      .category-tabs { margin-bottom: 8px; }
 
-      /* Tighten order panel internals */
+      /* Order panel: full-screen overlay (same mechanic as portrait) */
+      .order-panel { display: none; }
+      .order-panel.show-mobile {
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        inset: 0;
+        z-index: 250;
+        border-radius: 0;
+        padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+      }
+
+      /* Tighten order panel contents */
       .order-header { padding: 8px 12px; }
-      .order-items { padding: 6px 8px; }
+      .order-items { padding: 6px 8px; min-height: 60px; }
       .order-item { padding: 6px 8px; margin-bottom: 4px; }
-      .order-summary { padding: 8px 12px; }
-      .payment-section { padding: 8px 12px 10px; }
+      .order-summary { padding: 7px 12px 6px; gap: 3px; }
+      .summary-row { font-size: 0.8rem; }
+      .summary-row.total { font-size: 1rem; padding: 6px 0 2px; }
+      .summary-row.total span:last-child { font-size: 1.2rem; }
+      .payment-section { padding: 7px 12px 8px; gap: 7px; }
+      .quick-cash { gap: 4px; }
+      .quick-cash-btn { padding: 4px 2px; font-size: 0.68rem; }
+      .btn-charge { padding: 11px; font-size: 1rem; }
+      .cash-input { font-size: 0.95rem; padding: 8px 10px; }
 
-      /* Quick cash buttons: smaller in landscape */
-      .quick-cash { gap: 4px; margin-bottom: 6px; }
-      .quick-cash-btn { padding: 4px 6px; font-size: 0.7rem; }
+      /* Show the landscape tab bar */
+      .landscape-tab-bar { display: flex !important; }
 
-      /* Float cart btn hidden since panel is visible */
+      /* Hide floating cart button — tab bar replaces it */
       .float-cart-btn { display: none !important; }
+
+      /* Hide "← Back" button — tab bar handles navigation */
+      .btn-back-menu { display: none !important; }
     }
+
+    /* ── Landscape Tab Bar (hidden by default, shown only in landscape MQ) ── */
+    .landscape-tab-bar {
+      display: none; /* hidden on portrait / desktop */
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: calc(52px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      background: var(--sidebar-bg);
+      border-top: 1px solid rgba(255,255,255,0.1);
+      z-index: 300;
+      align-items: stretch;
+    }
+    .ltab {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text3);
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      font-family: 'Nunito', sans-serif;
+      letter-spacing: 0.5px;
+      transition: color 0.2s, background 0.2s;
+      position: relative;
+      border-top: 3px solid transparent;
+    }
+    .ltab .ltab-icon { font-size: 1.1rem; }
+    .ltab.active {
+      color: var(--orange);
+      border-top-color: var(--orange);
+      background: rgba(232,124,30,0.08);
+    }
+    .ltab-badge {
+      position: absolute;
+      top: 6px;
+      right: calc(50% - 42px);
+      background: #ef4444;
+      color: #fff;
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      font-size: 0.6rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Nunito', sans-serif;
+    }
+    .ltab-badge.hidden { display: none; }
 
     /* ========== FLOATING CART BTN (mobile) ========== */
     .float-cart-btn {

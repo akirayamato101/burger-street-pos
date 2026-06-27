@@ -837,11 +837,24 @@
   </main>
 </div>
 
-<!-- Float Cart Btn (mobile) -->
+<!-- Float Cart Btn (mobile portrait) -->
 <button class="float-cart-btn" id="floatCartBtn" onclick="toggleMobileCart()">
   🛒
   <span class="float-cart-count hidden" id="cartCount">0</span>
 </button>
+
+<!-- Landscape Bottom Tab Bar (phones in landscape only, shown via CSS) -->
+<div class="landscape-tab-bar" id="landscapeTabBar">
+  <button class="ltab active" id="ltabMenu" onclick="switchLandscapeTab('menu')">
+    <span class="ltab-icon">🍔</span>
+    <span>MENU</span>
+  </button>
+  <button class="ltab" id="ltabOrder" onclick="switchLandscapeTab('order')">
+    <span class="ltab-icon">🧾</span>
+    <span>ORDER</span>
+    <span class="ltab-badge hidden" id="ltabBadge">0</span>
+  </button>
+</div>
 
 <!-- ===== INVENTORY MODAL ===== -->
 <div id="invModal" class="modal hidden">
@@ -1106,6 +1119,68 @@
         .catch(err => console.warn('SW registration failed:', err));
     });
   }
+</script>
+
+<!-- ── Landscape tab bar logic ── -->
+<script>
+  /* switchLandscapeTab('menu' | 'order')
+     Called by the bottom tab bar buttons in phone-landscape mode.
+     Reuses the existing orderPanel / toggleMobileCart() mechanics. */
+  function switchLandscapeTab(tab) {
+    const orderPanel = document.getElementById('orderPanel');
+    const ltabMenu   = document.getElementById('ltabMenu');
+    const ltabOrder  = document.getElementById('ltabOrder');
+
+    if (tab === 'order') {
+      // Show order panel as fullscreen overlay
+      orderPanel.classList.add('show-mobile');
+      ltabOrder.classList.add('active');
+      ltabMenu.classList.remove('active');
+    } else {
+      // Back to menu
+      orderPanel.classList.remove('show-mobile');
+      ltabMenu.classList.add('active');
+      ltabOrder.classList.remove('active');
+    }
+  }
+
+  /* Keep the landscape badge count in sync with the existing cart count.
+     We observe the cartCount element (used by the float button) via
+     MutationObserver so we don't need to touch any POS JS files. */
+  document.addEventListener('DOMContentLoaded', () => {
+    const cartCount  = document.getElementById('cartCount');
+    const ltabBadge  = document.getElementById('ltabBadge');
+    if (!cartCount || !ltabBadge) return;
+
+    function syncBadge() {
+      const n = cartCount.textContent.trim();
+      const hidden = cartCount.classList.contains('hidden') || n === '0' || n === '';
+      ltabBadge.textContent = n;
+      ltabBadge.classList.toggle('hidden', hidden);
+    }
+
+    // Initial sync
+    syncBadge();
+
+    // Watch for changes pushed by the POS JS
+    const obs = new MutationObserver(syncBadge);
+    obs.observe(cartCount, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  });
+
+  /* When the user navigates away from the POS page, auto-close the
+     order overlay so it doesn't bleed into other pages. */
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const orderPanel = document.getElementById('orderPanel');
+        if (orderPanel) orderPanel.classList.remove('show-mobile');
+        const ltabMenu  = document.getElementById('ltabMenu');
+        const ltabOrder = document.getElementById('ltabOrder');
+        if (ltabMenu)  ltabMenu.classList.add('active');
+        if (ltabOrder) ltabOrder.classList.remove('active');
+      });
+    });
+  });
 </script>
 </body>
 </html>
