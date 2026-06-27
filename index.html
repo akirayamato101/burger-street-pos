@@ -638,9 +638,14 @@
             <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">NOTES (optional)</label>
             <input type="text" id="expenseNotes" class="input-field" style="width:100%;" placeholder="e.g. From Puregold, receipt #123" />
           </div>
-          <div style="margin-bottom:20px;">
+          <div style="margin-bottom:14px;">
             <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">DATE & TIME</label>
             <input type="datetime-local" id="expenseDatetime" class="input-field" style="width:100%;" />
+          </div>
+          <div id="expenseCashSourceRow" style="display:none;margin-bottom:14px;">
+            <label style="font-size:0.82rem;color:var(--text3);font-weight:600;letter-spacing:1px;display:block;margin-bottom:6px;">DEDUCT FROM</label>
+            <select id="expenseCashSource" class="input-field" style="width:100%;"></select>
+            <p style="font-size:0.75rem;color:var(--text3);margin-top:4px;">Choose which cash/amount this expense will be taken from.</p>
           </div>
           <button class="btn btn-primary" onclick="saveExpense()" style="width:100%;font-size:1rem;font-weight:800;background:var(--orange);">Save Expense</button>
         </div>

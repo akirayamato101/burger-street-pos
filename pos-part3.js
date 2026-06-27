@@ -513,20 +513,22 @@ function seedOpeningFromLastClosing(dateKey, invData) {
     // instead, distributed proportionally across the named amount items
     // (same approach already used when pre-filling the closing modal), so
     // the carried-forward cash always reflects what was really spent.
-    const fallbackExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(fallbackFrom));
-    const fallbackExpenseTotal = fallbackExpenses.reduce((s, e) => s + (e.amount || 0), 0);
-    const fallbackOpenTotal = (lastOpeningFallback.amounts || []).reduce((s, a) => s + (a.amount || 0), 0);
+    const fallbackExpenses  = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(fallbackFrom));
+    const fallbackAmounts   = lastOpeningFallback.amounts || [];
+    const fallbackFirstName = fallbackAmounts.length ? fallbackAmounts[0].name : null;
+    // Build per-name deduction map: cashSource targets specific item; legacy expenses hit first item
+    const fallbackDeductMap = {};
+    fallbackExpenses.forEach(e => {
+      const src = e.cashSource || fallbackFirstName;
+      if (src) fallbackDeductMap[src] = (fallbackDeductMap[src] || 0) + (e.amount || 0);
+    });
     newOpening = {
       ingredients: (lastOpeningFallback.ingredients || []).map(i => ({
         name: i.name, unit: i.unit,
         qty: Math.max(0, (i.qty ?? 0) - (i.usedQty ?? 0))
       })),
-      amounts: (lastOpeningFallback.amounts || []).map(a => {
-        // Distribute the source day's expenses proportional to each item's
-        // share of that day's opening total — mirrors the closing-modal
-        // pre-fill logic so the two stay consistent with each other.
-        const share = fallbackOpenTotal > 0 ? (a.amount || 0) / fallbackOpenTotal : 0;
-        const deduction = Math.min(a.amount || 0, fallbackExpenseTotal * share);
+      amounts: fallbackAmounts.map(a => {
+        const deduction = Math.min(a.amount || 0, fallbackDeductMap[a.name] || 0);
         return { name: a.name, amount: Math.max(0, (a.amount ?? 0) - deduction) };
       }),
       seededFrom: fallbackFrom
@@ -754,21 +756,22 @@ function openInvModal(type) {
       // gross opening total (e.g. ₱4,000) instead of what was actually left
       // after expenses (e.g. ₱4,000 − ₱780 = ₱3,220).
       //
-      // Expenses are deducted proportionally across all named amount items
-      // (e.g. "Pocket Money ₱1,000" and "Cash on Hand ₱3,000" each absorb
-      // their pro-rata share of the total expense, floored at ₱0). This keeps
-      // the individual item totals internally consistent while the overall
-      // closing total correctly reflects what remains.
+      // Expenses with a cashSource are deducted from that specific named amount.
+      // Legacy expenses without a cashSource fall back to the first amount item.
+      // This ensures e.g. a ₱780 expense from "Pocket Money" only reduces that
+      // item, leaving "Cash on Hand" untouched.
       const todayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(dateKey));
-      const totalExpense  = todayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
       const opAmounts     = op.amounts || [];
-      const openTotal     = opAmounts.reduce((s, a) => s + (a.amount || 0), 0);
+      const firstAmtName  = opAmounts.length ? opAmounts[0].name : null;
+      // Build per-name deduction totals
+      const expDeductMap  = {};
+      todayExpenses.forEach(e => {
+        const src = e.cashSource || firstAmtName;
+        if (src) expDeductMap[src] = (expDeductMap[src] || 0) + (e.amount || 0);
+      });
       invAmounts = opAmounts.map(a => {
-        // Distribute expense proportional to each item's share of the opening total.
-        // If opening total is 0 (degenerate), just leave each item unchanged.
-        const share       = openTotal > 0 ? (a.amount || 0) / openTotal : 0;
-        const deduction   = Math.min(a.amount || 0, totalExpense * share);
-        const closingAmt  = Math.max(0, (a.amount || 0) - deduction);
+        const deduction  = Math.min(a.amount || 0, expDeductMap[a.name] || 0);
+        const closingAmt = Math.max(0, (a.amount || 0) - deduction);
         return { ...a, closingAmount: closingAmt, notes: '' };
       });
     }
@@ -1500,11 +1503,39 @@ function renderInventory() {
   }
   if (openAmounts.length) {
     openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;">💵 Cash / Amounts</div>`;
-    openHTML += openAmounts.map(a => `
-      <div class="inv-list-item">
-        <span style="font-weight:700;">${escHtml(a.name)}</span>
-        <span style="font-weight:800;color:var(--blue);">₱${fmt(a.amount||0)}</span>
-      </div>`).join('');
+
+    // Compute per-name expense deductions so each row shows its own remaining balance
+    // Expenses with a cashSource are deducted from that specific named amount.
+    // Expenses without a cashSource (legacy) fall back to the first amount.
+    const firstAmtName = openAmounts.length ? openAmounts[0].name : null;
+    const expenseByName = {};
+    dayExpenses.forEach(e => {
+      const src = e.cashSource || firstAmtName;
+      if (src) expenseByName[src] = (expenseByName[src] || 0) + (e.amount || 0);
+    });
+
+    openHTML += openAmounts.map(a => {
+      const deducted  = expenseByName[a.name] || 0;
+      const remaining = Math.max(0, (a.amount || 0) - deducted);
+      const hasDeduct = deducted > 0;
+      return `
+      <div class="inv-list-item" style="flex-direction:column;align-items:stretch;gap:2px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:700;">${escHtml(a.name)}</span>
+          <span style="font-weight:800;color:var(--blue);">₱${fmt(a.amount||0)}</span>
+        </div>
+        ${hasDeduct ? `
+        <div style="display:flex;justify-content:space-between;font-size:0.78rem;color:var(--orange);padding-left:4px;">
+          <span>− Expenses deducted</span>
+          <span style="font-weight:700;">−₱${fmt(deducted)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.82rem;font-weight:800;color:${remaining<=0?'var(--red)':'var(--green)'};padding-left:4px;border-top:1px dashed var(--border);margin-top:2px;padding-top:2px;">
+          <span>Remaining</span>
+          <span>₱${fmt(remaining)}</span>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+
     openHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH TOTAL</span><span style="color:var(--blue);">₱${fmt(openAmtTotal)}</span></div>`;
     if (dayExpenseTotal > 0) {
       openHTML += `
@@ -1519,9 +1550,10 @@ function renderInventory() {
       // Itemised expense breakdown under the opening cash section
       openHTML += `<div style="margin-top:8px;border-left:3px solid rgba(251,146,60,0.4);padding-left:10px;">`;
       dayExpenses.forEach(e => {
-        const t = new Date(e.datetime).toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'});
+        const t   = new Date(e.datetime).toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'});
+        const src = e.cashSource ? ` · from <b>${escHtml(e.cashSource)}</b>` : '';
         openHTML += `<div style="display:flex;justify-content:space-between;font-size:0.78rem;padding:2px 0;color:var(--text2);">
-          <span>🔸 ${escHtml(e.desc)}${e.category ? ' ('+escHtml(e.category)+')' : ''} <span style="color:var(--text3);">${t}</span></span>
+          <span>🔸 ${escHtml(e.desc)}${e.category ? ' ('+escHtml(e.category)+')' : ''}${src} <span style="color:var(--text3);">${t}</span></span>
           <span style="font-weight:700;color:var(--orange);">−₱${fmt(e.amount)}</span>
         </div>`;
       });
@@ -2038,6 +2070,30 @@ function openExpenseModal() {
   document.getElementById('expenseNotes').value = '';
   document.getElementById('expensePaidBy').value = posState.settings.cashierName || '';
   document.getElementById('expenseCategory').value = 'Supplies';
+
+  // Populate cash source dropdown from today's opening amounts
+  const sourceRow    = document.getElementById('expenseCashSourceRow');
+  const sourceSelect = document.getElementById('expenseCashSource');
+  const dateKey      = getTodayKey();
+  const data         = loadInventoryData();
+  const activeShift  = getActiveShift(dateKey, data) || {};
+  const openAmounts  = (activeShift.opening && activeShift.opening.amounts) || [];
+
+  sourceSelect.innerHTML = '';
+  if (openAmounts.length > 1) {
+    // First item is the default (Pocket Money / Change) — pre-selected
+    openAmounts.forEach((a, i) => {
+      const opt = document.createElement('option');
+      opt.value = a.name;
+      opt.textContent = `${a.name} (₱${fmt(a.amount || 0)})`;
+      if (i === 0) opt.selected = true;
+      sourceSelect.appendChild(opt);
+    });
+    sourceRow.style.display = 'block';
+  } else {
+    sourceRow.style.display = 'none';
+  }
+
   document.getElementById('expenseModal').style.display = 'flex';
 }
 
@@ -2053,6 +2109,21 @@ function saveExpense() {
   const notes   = document.getElementById('expenseNotes').value.trim();
   const dt      = document.getElementById('expenseDatetime').value;
 
+  // Cash source: which opening amount is this deducted from
+  const sourceRow    = document.getElementById('expenseCashSourceRow');
+  const sourceSelect = document.getElementById('expenseCashSource');
+  let cashSource = null;
+  if (sourceRow && sourceRow.style.display !== 'none' && sourceSelect && sourceSelect.value) {
+    cashSource = sourceSelect.value;
+  } else {
+    // Default: use the first opening amount (Pocket Money / Change) if available
+    const dateKey     = getTodayKey();
+    const data        = loadInventoryData();
+    const activeShift = getActiveShift(dateKey, data) || {};
+    const openAmounts = (activeShift.opening && activeShift.opening.amounts) || [];
+    if (openAmounts.length > 0) cashSource = openAmounts[0].name;
+  }
+
   if (!desc)           { showToast('Please enter a description.', 'error'); return; }
   if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
 
@@ -2063,7 +2134,8 @@ function saveExpense() {
     amount,
     paidBy: paidBy || '—',
     notes: notes || '',
-    datetime: dt || new Date().toISOString()
+    datetime: dt || new Date().toISOString(),
+    cashSource: cashSource || null
   };
 
   const expenses = loadExpenses();
@@ -2131,6 +2203,7 @@ function renderExpenseLog() {
           <div style="font-weight:700;font-size:0.95rem;color:var(--text);">${escHtml(e.desc)}</div>
           ${e.notes ? `<div style="font-size:0.78rem;color:var(--text3);margin-top:1px;">📝 ${escHtml(e.notes)}</div>` : ''}
           <div style="font-size:0.75rem;color:var(--text3);margin-top:2px;">👤 ${escHtml(e.paidBy)}</div>
+          ${e.cashSource ? `<div style="font-size:0.75rem;color:var(--blue);margin-top:2px;font-weight:600;">💵 From: ${escHtml(e.cashSource)}</div>` : ''}
         </div>
         <div style="text-align:right;flex-shrink:0;">
           <div style="font-weight:800;color:var(--orange);font-size:1rem;">-₱${fmt(e.amount)}</div>
