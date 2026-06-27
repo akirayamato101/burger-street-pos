@@ -793,23 +793,30 @@
 
     /* ========== IMPROVED ORDER PANEL ========== */
     /* ===== ORDER PANEL — REDESIGNED ===== */
-    /* Full-height edge-to-edge sidebar on the right, spanning the ENTIRE
-       viewport top-to-bottom (it sits on top of/behind the topbar, not
-       beside it). It's position:fixed so its height is independent of
-       .pos-layout/.page-content scroll — but since this element lives
-       inside #page-pos, which is display:none on every other page, it
+    /* Full-height edge-to-edge sidebar on the right, spanning the FULL
+       remaining viewport height below the top navbar (it sits BELOW the
+       navbar, not on top of it — the navbar must stay fully visible and
+       clickable across its entire width on every page). It's
+       position:fixed so its height is independent of .pos-layout/
+       .page-content scroll — but since this element lives inside
+       #page-pos, which is display:none on every other page, it
        automatically disappears outside the New Order page with no JS
        changes needed. Width matches the empty grid column reserved in
-       .pos-layout so the menu panel doesn't run underneath it. */
+       .pos-layout so the menu panel doesn't run underneath it.
+       `top` is hardcoded to match .sidebar's min-height at each breakpoint
+       (60px desktop / 56px tablet — see media queries below) rather than
+       being computed, since CSS has no way to read a sibling's rendered
+       height without JS. */
     .order-panel {
       position: fixed;
-      top: 0;
+      top: 60px; /* = .sidebar's min-height on desktop (≥1100px) */
       right: 0;
       bottom: 0;
       width: clamp(400px, 38vw, 580px);
       background: var(--card-bg);
       border: none;
       border-left: 1px solid var(--border);
+      border-top: 1px solid var(--border);
       border-radius: 0;
       display: flex;
       flex-direction: column;
@@ -823,11 +830,9 @@
       overflow-y: auto;
       overflow-x: hidden;
       box-shadow: -6px 0 28px rgba(0,0,0,0.22);
-      z-index: 210; /* above .topbar (50) and .sidebar nav (200) — this only
-                       matters on screens ≥701px, where the hamburger dropdown
-                       (also z-index 200) is never shown at the same time as
-                       this fixed panel, so there's no conflict. Stays below
-                       the mobile cart overlay (250) and lock screen (9999). */
+      z-index: 40; /* below .sidebar nav (200) and .topbar (50) — it no
+                      longer needs to outrank them since it now starts
+                      below both instead of overlapping them. */
     }
 
     .order-header {
@@ -1647,9 +1652,10 @@
 
       /* Order panel: use a fixed min-width so it stays usable, and a
          proportional share so it doesn't crowd out the menu grid.
-         Width must match the grid spacer column above. */
+         Width must match the grid spacer column above. top must match
+         .sidebar's min-height (56px) at this breakpoint. */
       .pos-layout { grid-template-columns: 1.2fr clamp(340px, 42%, 500px); gap: 14px; padding: 14px 16px 16px; }
-      .order-panel { width: clamp(340px, 42vw, 500px); }
+      .order-panel { width: clamp(340px, 42vw, 500px); top: 56px; }
     }
 
     /* ----- Phone (≤700px, e.g. Android phones): collapse the nav links
