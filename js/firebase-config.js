@@ -28,11 +28,10 @@ const FIRESTORE_STORE_ID = "main-branch";
 firebase.initializeApp(firebaseConfig);
 const firestoreDb = firebase.firestore();
 
-// Lets the app keep working (reading/writing the LOCAL cache) when the
-// connection drops, and quietly re-syncs once it's back — important since
-// this app is used on a shop floor where wifi isn't always reliable.
-firestoreDb.enablePersistence({ synchronizeTabs: true }).catch(err => {
-  // Fails in some cases (private/incognito mode, or more than one tab open
-  // without synchronizeTabs support) — not fatal, sync still works without it.
-  console.warn('Firestore offline persistence not enabled:', err.code);
-});
+// Offline persistence disabled — was causing QuotaExceededError in the browser
+// because local storage was full. The app still works perfectly online and
+// syncs in real time across all devices. Re-enable this later if needed after
+// clearing browser storage.
+// firestoreDb.enablePersistence({ synchronizeTabs: true }).catch(err => {
+//   console.warn('Firestore offline persistence not enabled:', err.code);
+// });
