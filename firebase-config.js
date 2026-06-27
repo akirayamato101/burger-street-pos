@@ -10,12 +10,13 @@
    ============================================= */
 
 const firebaseConfig = {
-  apiKey: "PASTE_YOUR_API_KEY_HERE",
-  authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
-  projectId: "PASTE_YOUR_PROJECT_ID",
-  storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
-  messagingSenderId: "PASTE_YOUR_SENDER_ID",
-  appId: "PASTE_YOUR_APP_ID"
+  
+  apiKey: "AIzaSyC3nCQj10h4DmSfrwTtHZpXMGVs2GcGlBM",
+  authDomain: "burger-street-pos-15cd9.firebaseapp.com",
+  projectId: "burger-street-pos-15cd9",
+  storageBucket: "burger-street-pos-15cd9.firebasestorage.app",
+  messagingSenderId: "828938679812",
+  appId: "1:828938679812:web:e3f81e4ef2ec5f49a46751"
 };
 
 // One shared ID for this shop's data. Every device that uses this same ID
