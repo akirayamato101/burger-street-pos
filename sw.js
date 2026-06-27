@@ -3,7 +3,7 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v9';
+const CACHE_NAME = 'burger-pos-v10';
 
 const ASSETS_TO_CACHE = [
   '/',
@@ -14,9 +14,11 @@ const ASSETS_TO_CACHE = [
   // so a precached entry without the query string would never be found by
   // caches.match() for these requests, leaving the app unable to load its
   // own code on a first-ever offline launch.
-  '/pos-part1.js?v=1',
-  '/pos-part2.js?v=2',
-  '/pos-part3.js?v=2',
+  '/js/firebase-config.js?v=1',
+  '/js/cloud-storage.js?v=1',
+  '/pos-part1.js?v=2',
+  '/pos-part2.js?v=3',
+  '/pos-part3.js?v=3',
   '/pos-part4.js?v=1',
   '/manifest.json',
   // Dexie.js from CDN — cache it so app works fully offline
@@ -24,7 +26,13 @@ const ASSETS_TO_CACHE = [
   // jsPDF + autotable — used to export the Daily Inventory Report as a PDF;
   // cached so the export still works with no internet connection.
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js',
+  // Firebase SDK — cached so the app shell still loads with no connection.
+  // Firestore's own offline persistence (enabled in firebase-config.js)
+  // handles reads/writes while offline and re-syncs once back online.
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js'
 ];
 
 // Install: cache all assets

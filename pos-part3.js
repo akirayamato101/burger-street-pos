@@ -211,7 +211,7 @@ function renderOwnerSummary() {
   cashiers.forEach(c => {
     let orders = [], cashAdvances = [];
     try {
-      const s = localStorage.getItem(getCashierStorageKey(c.id));
+      const s = cloudStorage.getItem(getCashierStorageKey(c.id));
       if (s) {
         const parsed = JSON.parse(s);
         orders = parsed.orders || [];
@@ -326,7 +326,7 @@ const INGREDIENT_TEMPLATE_KEY = 'burgerStreetIngredientTemplate';
 
 function loadIngredientTemplate() {
   try {
-    const s = localStorage.getItem(INGREDIENT_TEMPLATE_KEY);
+    const s = cloudStorage.getItem(INGREDIENT_TEMPLATE_KEY);
     if (s) return JSON.parse(s);
   } catch (e) {}
   // First-ever run, nothing saved yet: seed with sensible defaults.
@@ -342,7 +342,7 @@ function loadIngredientTemplate() {
   };
 }
 function saveIngredientTemplate(tpl) {
-  try { localStorage.setItem(INGREDIENT_TEMPLATE_KEY, JSON.stringify(tpl)); } catch (e) {}
+  try { cloudStorage.setItem(INGREDIENT_TEMPLATE_KEY, JSON.stringify(tpl)); } catch (e) {}
 }
 // Called whenever an opening inventory is saved — keeps the template in sync
 // with any new ingredient/amount names the cashier types in, WITHOUT storing
@@ -365,24 +365,24 @@ function syncIngredientTemplate(ingredients, amounts) {
 
 function loadInventoryData() {
   try {
-    const s = localStorage.getItem(INV_STORE_KEY);
+    const s = cloudStorage.getItem(INV_STORE_KEY);
     return s ? JSON.parse(s) : {};
   } catch(e) { return {}; }
 }
 
 function saveInventoryData(data) {
-  try { localStorage.setItem(INV_STORE_KEY, JSON.stringify(data)); } catch(e) {}
+  try { cloudStorage.setItem(INV_STORE_KEY, JSON.stringify(data)); } catch(e) {}
 }
 
 // Shared deliveries (visible to all cashiers)
 function loadSharedDeliveries() {
   try {
-    const s = localStorage.getItem(SHARED_DELIVERY_KEY);
+    const s = cloudStorage.getItem(SHARED_DELIVERY_KEY);
     return s ? JSON.parse(s) : [];
   } catch(e) { return []; }
 }
 function saveSharedDeliveries(arr) {
-  try { localStorage.setItem(SHARED_DELIVERY_KEY, JSON.stringify(arr)); } catch(e) {}
+  try { cloudStorage.setItem(SHARED_DELIVERY_KEY, JSON.stringify(arr)); } catch(e) {}
 }
 
 // Returns the active shift for a dateKey from the inventory data.
@@ -2052,13 +2052,13 @@ const EXPENSE_KEY = 'burgerStreetExpenses';
 
 function loadExpenses() {
   try {
-    const s = localStorage.getItem(EXPENSE_KEY);
+    const s = cloudStorage.getItem(EXPENSE_KEY);
     return s ? JSON.parse(s) : [];
   } catch(e) { return []; }
 }
 
 function saveExpenses(arr) {
-  try { localStorage.setItem(EXPENSE_KEY, JSON.stringify(arr)); } catch(e) {}
+  try { cloudStorage.setItem(EXPENSE_KEY, JSON.stringify(arr)); } catch(e) {}
 }
 
 function openExpenseModal() {

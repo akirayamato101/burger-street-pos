@@ -283,21 +283,21 @@ const GLOBAL_ALERT_KEY   = 'burgerStreetGlobalAlertThreshold';
 
 function loadPriorityThresholds() {
   try {
-    const s = localStorage.getItem(PRIORITY_STOCK_KEY);
+    const s = cloudStorage.getItem(PRIORITY_STOCK_KEY);
     if (s) return JSON.parse(s);
   } catch (e) {}
   return {};
 }
 
 function savePriorityThresholds(map) {
-  try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(map)); } catch (e) {}
+  try { cloudStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(map)); } catch (e) {}
 }
 
 // Global alert threshold — single value that applies to ALL ingredients
 // unless overridden by a per-ingredient threshold.
 function loadGlobalAlertThreshold() {
   try {
-    const v = localStorage.getItem(GLOBAL_ALERT_KEY);
+    const v = cloudStorage.getItem(GLOBAL_ALERT_KEY);
     if (v !== null && v !== '') return Number(v);
   } catch (e) {}
   return null; // null = not set
@@ -306,9 +306,9 @@ function loadGlobalAlertThreshold() {
 function saveGlobalAlertThreshold(val) {
   try {
     if (val === null || val === '') {
-      localStorage.removeItem(GLOBAL_ALERT_KEY);
+      cloudStorage.removeItem(GLOBAL_ALERT_KEY);
     } else {
-      localStorage.setItem(GLOBAL_ALERT_KEY, String(Math.max(1, Number(val))));
+      cloudStorage.setItem(GLOBAL_ALERT_KEY, String(Math.max(1, Number(val))));
     }
   } catch (e) {}
 }
@@ -1015,7 +1015,7 @@ function exportAllData() {
     const perCashierData = {};
     cashiers.forEach(c => {
       const key = getCashierStorageKey(c.id);
-      const s = localStorage.getItem(key);
+      const s = cloudStorage.getItem(key);
       if (s) perCashierData[key] = JSON.parse(s);
     });
 
@@ -1065,7 +1065,7 @@ function exportAllData() {
       const perCashierData = {};
       cashiers.forEach(c => {
         const key = getCashierStorageKey(c.id);
-        const s = localStorage.getItem(key);
+        const s = cloudStorage.getItem(key);
         if (s) perCashierData[key] = JSON.parse(s);
       });
       const backup = {
@@ -1114,7 +1114,7 @@ function importAllData(file) {
         if (backup.globalState) saveGlobalState(backup.globalState);
         if (backup.perCashierData) {
           Object.entries(backup.perCashierData).forEach(([key, val]) => {
-            try { localStorage.setItem(key, JSON.stringify(val)); } catch (err) {}
+            try { cloudStorage.setItem(key, JSON.stringify(val)); } catch (err) {}
           });
         }
         if (backup.inventory) saveInventoryData(backup.inventory);
@@ -1175,12 +1175,12 @@ function confirmClearSelectedData() {
       cashiers.forEach(c => {
         try {
           const key = getCashierStorageKey(c.id);
-          const s = localStorage.getItem(key);
+          const s = cloudStorage.getItem(key);
           if (s) {
             const parsed = JSON.parse(s);
             parsed.orders = [];
             parsed.orderCounter = 1;
-            localStorage.setItem(key, JSON.stringify(parsed));
+            cloudStorage.setItem(key, JSON.stringify(parsed));
           }
         } catch (e) {}
       });
@@ -1197,11 +1197,11 @@ function confirmClearSelectedData() {
       cashiers.forEach(c => {
         try {
           const key = getCashierStorageKey(c.id);
-          const s = localStorage.getItem(key);
+          const s = cloudStorage.getItem(key);
           if (s) {
             const parsed = JSON.parse(s);
             parsed.customProducts = [];
-            localStorage.setItem(key, JSON.stringify(parsed));
+            cloudStorage.setItem(key, JSON.stringify(parsed));
           }
         } catch (e) {}
       });
@@ -1209,17 +1209,17 @@ function confirmClearSelectedData() {
     }
 
     if (wantInventory) {
-      try { localStorage.removeItem(INV_STORE_KEY); } catch (e) {}
-      try { localStorage.removeItem(SHARED_DELIVERY_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(INV_STORE_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(SHARED_DELIVERY_KEY); } catch (e) {}
       // Cash advance log lives inside each cashier's own posState.
       cashiers.forEach(c => {
         try {
           const key = getCashierStorageKey(c.id);
-          const s = localStorage.getItem(key);
+          const s = cloudStorage.getItem(key);
           if (s) {
             const parsed = JSON.parse(s);
             parsed.cashAdvances = [];
-            localStorage.setItem(key, JSON.stringify(parsed));
+            cloudStorage.setItem(key, JSON.stringify(parsed));
           }
         } catch (e) {}
       });
@@ -1227,12 +1227,12 @@ function confirmClearSelectedData() {
     }
 
     if (wantIngList) {
-      try { localStorage.removeItem(INGREDIENT_TEMPLATE_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(INGREDIENT_TEMPLATE_KEY); } catch (e) {}
     }
 
     if (wantCashiers) {
-      try { localStorage.removeItem(CASHIERS_KEY); } catch (e) {}
-      try { localStorage.removeItem(OWNER_GLOBAL_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(CASHIERS_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(OWNER_GLOBAL_KEY); } catch (e) {}
       try { localStorage.removeItem('burgStreet_activeSession'); } catch (e) {}
       // Settings (including ownerPin) live in OWNER_GLOBAL_KEY (cleared above)
       // and in posState — reset posState's copy too.

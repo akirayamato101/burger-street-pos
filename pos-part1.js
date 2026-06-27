@@ -32,10 +32,10 @@ function getLocalDateKey(d = new Date()) {
 let activeCashier = null; // { id, name, pin }
 
 function getCashiers() {
-  try { return JSON.parse(localStorage.getItem(CASHIERS_KEY)) || []; } catch(e) { return []; }
+  try { return JSON.parse(cloudStorage.getItem(CASHIERS_KEY)) || []; } catch(e) { return []; }
 }
 function saveCashiers(list) {
-  try { localStorage.setItem(CASHIERS_KEY, JSON.stringify(list)); } catch(e) {}
+  try { cloudStorage.setItem(CASHIERS_KEY, JSON.stringify(list)); } catch(e) {}
 }
 
 function getCashierStorageKey(cashierId) {
@@ -48,12 +48,12 @@ function getCashierInvKey(cashierId) {
 // Global data (products, owner settings) shared across all cashiers
 function loadGlobalState() {
   try {
-    const s = localStorage.getItem(OWNER_GLOBAL_KEY);
+    const s = cloudStorage.getItem(OWNER_GLOBAL_KEY);
     return s ? JSON.parse(s) : {};
   } catch(e) { return {}; }
 }
 function saveGlobalState(data) {
-  try { localStorage.setItem(OWNER_GLOBAL_KEY, JSON.stringify(data)); } catch(e) {}
+  try { cloudStorage.setItem(OWNER_GLOBAL_KEY, JSON.stringify(data)); } catch(e) {}
 }
 
 // =================== STATE ===================
@@ -72,7 +72,7 @@ let activePage = 'pos';
 // =================== STORAGE ===================
 function savePos() {
   if (!activeCashier) return;
-  try { localStorage.setItem(getCashierStorageKey(activeCashier.id), JSON.stringify(posState)); } catch(e) {}
+  try { cloudStorage.setItem(getCashierStorageKey(activeCashier.id), JSON.stringify(posState)); } catch(e) {}
   // Also save products globally so all cashiers share the menu
   const global = loadGlobalState();
   global.customProducts = posState.customProducts;
@@ -83,7 +83,7 @@ function savePos() {
 function loadPos() {
   if (!activeCashier) return;
   try {
-    const s = localStorage.getItem(getCashierStorageKey(activeCashier.id));
+    const s = cloudStorage.getItem(getCashierStorageKey(activeCashier.id));
     if (s) posState = { ...posState, ...JSON.parse(s) };
     // Load shared products from global store
     const global = loadGlobalState();
@@ -140,18 +140,36 @@ document.addEventListener('DOMContentLoaded', () => {
   if (inventoryDate) inventoryDate.value = getLocalDateKey();
   if (ownerSummaryDate) ownerSummaryDate.value = today;
 
-  // Restore session if available, otherwise show cashier login
-  try {
-    const saved = localStorage.getItem('burgStreet_activeSession');
-    if (saved) {
-      const session = JSON.parse(saved);
-      activeCashier = session;
-      loadPos();
-      unlockApp();
-      return;
-    }
-  } catch(e) {}
-  showCashierLogin();
+  // Wait for the first batch of data to arrive from Firebase before showing
+  // anything that depends on cloud data (cashier list, products, etc). Without
+  // this, the app would briefly render with an EMPTY cache on every fresh
+  // load, then "snap" to the real data a moment later once Firestore replies.
+  const startApp = () => {
+    // Restore session if available, otherwise show cashier login
+    try {
+      const saved = localStorage.getItem('burgStreet_activeSession');
+      if (saved) {
+        const session = JSON.parse(saved);
+        activeCashier = session;
+        loadPos();
+        unlockApp();
+        return;
+      }
+    } catch(e) {}
+    showCashierLogin();
+  };
+
+  if (typeof cloudStorage !== 'undefined') {
+    cloudShowConnecting();
+    cloudStorage.onReady(() => {
+      cloudHideConnecting();
+      startApp();
+    });
+  } else {
+    // Firebase scripts didn't load (e.g. offline on first-ever visit) — fall
+    // back to running on whatever is in the local cache so the app isn't dead.
+    startApp();
+  }
 });
 
 function updateDate() {
