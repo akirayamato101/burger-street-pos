@@ -483,7 +483,7 @@
     /* ========== POS LAYOUT ========== */
     .pos-layout {
       display: grid;
-      grid-template-columns: 1fr 380px;
+      grid-template-columns: 1fr clamp(360px, 30vw, 520px);
       gap: 20px;
       height: 100%;
       overflow: hidden;
@@ -1538,10 +1538,9 @@
       .cashier-label { display: none; }
       .cashier-display { padding: 6px 10px; }
 
-      /* Order panel: shrink from the fixed 380px desktop width to a
-         proportional share of the viewport so it doesn't crowd out the
-         menu grid on tablet-width screens. */
-      .pos-layout { grid-template-columns: 1.6fr 1fr; gap: 14px; padding: 14px 16px 16px; }
+      /* Order panel: use a fixed min-width so it stays usable, and a
+         proportional share so it doesn't crowd out the menu grid. */
+      .pos-layout { grid-template-columns: 1.5fr clamp(300px, 36%, 440px); gap: 14px; padding: 14px 16px 16px; }
       .order-panel { min-width: 0; }
     }
 
@@ -1579,6 +1578,7 @@
       .btn-logout { padding: 9px 10px; font-size: 0; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; }
       .btn-logout::before { content: '🔒'; font-size: 1.05rem; }
 
+      /* Portrait phones: single column, order panel as fullscreen overlay */
       .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px)); }
       #page-pos { height: auto; }
       .menu-panel { min-height: 0; height: auto; }
@@ -1589,6 +1589,49 @@
       #page-pos.active { padding: 0 !important; }
       .menu-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
       .summary-cards { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ----- Phone landscape (≤700px wide but landscape orientation):
+       Show both panels side-by-side like a mini-tablet so the POS
+       is actually usable without needing the fullscreen cart overlay. ----- */
+    @media (max-width: 700px) and (orientation: landscape) {
+      /* Re-enable the side-by-side POS layout */
+      .pos-layout {
+        grid-template-columns: 1fr clamp(240px, 38%, 360px);
+        height: 100%;
+        overflow: hidden;
+        padding: 8px 12px 8px;
+      }
+      #page-pos { height: 100%; }
+      #page-pos.active { display: flex; flex-direction: column; }
+      .menu-panel { min-height: 0; height: auto; overflow: hidden; }
+      /* Show the order panel normally (not hidden) */
+      .order-panel { display: flex; }
+      /* If the cart overlay was triggered, reset it to inline mode */
+      .order-panel.show-mobile { position: relative; inset: auto; z-index: auto; border-radius: 18px; }
+
+      /* Tighten up the navbar to save vertical space in landscape */
+      .sidebar { min-height: 48px; }
+      .sidebar-header { padding: 6px 0; }
+
+      /* Make menu grid items shorter so more fit on screen */
+      .menu-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+      .menu-item { padding: 10px 10px; }
+      .menu-item-emoji { font-size: 1.5rem; }
+
+      /* Tighten order panel internals */
+      .order-header { padding: 8px 12px; }
+      .order-items { padding: 6px 8px; }
+      .order-item { padding: 6px 8px; margin-bottom: 4px; }
+      .order-summary { padding: 8px 12px; }
+      .payment-section { padding: 8px 12px 10px; }
+
+      /* Quick cash buttons: smaller in landscape */
+      .quick-cash { gap: 4px; margin-bottom: 6px; }
+      .quick-cash-btn { padding: 4px 6px; font-size: 0.7rem; }
+
+      /* Float cart btn hidden since panel is visible */
+      .float-cart-btn { display: none !important; }
     }
 
     /* ========== FLOATING CART BTN (mobile) ========== */
@@ -1646,4 +1689,46 @@
       border-radius: 12px;
       padding: 12px 14px;
       background: rgba(239, 68, 68, 0.04);
+    }
+
+    /* ========== LARGE DESKTOP (≥1400px): Wider order panel ========== */
+    @media (min-width: 1400px) {
+      .pos-layout {
+        grid-template-columns: 1fr clamp(420px, 28vw, 560px);
+        gap: 24px;
+        padding: 20px 32px 28px;
+      }
+      .order-title { font-size: 1.4rem; }
+      .summary-row.total { font-size: 1.2rem; }
+      .summary-row.total span:last-child { font-size: 1.5rem; }
+      .btn-charge { font-size: 1.1rem; padding: 16px; }
+      .menu-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+      .menu-item { padding: 18px 16px; }
+      .menu-item-emoji { font-size: 2.4rem; }
+      .menu-item-name { font-size: 0.95rem; }
+      .menu-item-price { font-size: 1.1rem; }
+    }
+
+    /* ========== EXTRA LARGE DESKTOP (≥1800px): Even more space ========== */
+    @media (min-width: 1800px) {
+      .pos-layout {
+        grid-template-columns: 1fr clamp(480px, 26vw, 620px);
+        gap: 28px;
+        padding: 24px 40px 32px;
+      }
+    }
+
+    /* ========== TABLET LANDSCAPE (701px–900px) ========== */
+    /* Tablets in landscape (e.g. 768px-900px wide) need tighter layout */
+    @media (min-width: 701px) and (max-width: 900px) {
+      .pos-layout { grid-template-columns: 1.4fr clamp(260px, 38%, 380px); gap: 12px; padding: 12px 14px 14px; }
+      .order-panel { min-width: 0; }
+      .menu-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+      .menu-item { padding: 12px 12px; }
+      .menu-item-emoji { font-size: 1.7rem; }
+      .order-header { padding: 10px 14px; }
+      .order-items { padding: 8px 10px; }
+      .payment-section { padding: 8px 12px 10px; }
+      .quick-cash { gap: 5px; }
+      .quick-cash-btn { padding: 5px 7px; font-size: 0.72rem; }
     }
