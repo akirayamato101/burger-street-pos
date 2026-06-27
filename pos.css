@@ -557,6 +557,10 @@
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
     /* ========== POS LAYOUT ========== */
+    /* The right grid column is just reserved empty space — the order panel
+       itself is position:fixed (see .order-panel below) so it can span the
+       FULL viewport height edge-to-edge, including the area behind the top
+       navbar. This column keeps the menu panel from running underneath it. */
     .pos-layout {
       display: grid;
       grid-template-columns: 1fr clamp(400px, 38vw, 580px);
@@ -789,14 +793,29 @@
 
     /* ========== IMPROVED ORDER PANEL ========== */
     /* ===== ORDER PANEL — REDESIGNED ===== */
+    /* Full-height edge-to-edge sidebar on the right, spanning the ENTIRE
+       viewport top-to-bottom (it sits on top of/behind the topbar, not
+       beside it). It's position:fixed so its height is independent of
+       .pos-layout/.page-content scroll — but since this element lives
+       inside #page-pos, which is display:none on every other page, it
+       automatically disappears outside the New Order page with no JS
+       changes needed. Width matches the empty grid column reserved in
+       .pos-layout so the menu panel doesn't run underneath it. */
     .order-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: clamp(400px, 38vw, 580px);
       background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 18px;
+      border: none;
+      border-left: 1px solid var(--border);
+      border-radius: 0;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 6px 28px rgba(0,0,0,0.22);
+      box-shadow: -6px 0 28px rgba(0,0,0,0.22);
+      z-index: 60; /* above .topbar (50), below .overlay/mobile nav (90/200) */
     }
 
     .order-header {
@@ -1615,9 +1634,10 @@
       .cashier-dropdown-trigger { padding: 5px 9px; }
 
       /* Order panel: use a fixed min-width so it stays usable, and a
-         proportional share so it doesn't crowd out the menu grid. */
+         proportional share so it doesn't crowd out the menu grid.
+         Width must match the grid spacer column above. */
       .pos-layout { grid-template-columns: 1.2fr clamp(340px, 42%, 500px); gap: 14px; padding: 14px 16px 16px; }
-      .order-panel { min-width: 0; }
+      .order-panel { width: clamp(340px, 42vw, 500px); }
     }
 
     /* ----- Phone (≤700px, e.g. Android phones): collapse the nav links
@@ -1870,6 +1890,7 @@
         gap: 24px;
         padding: 20px 32px 28px;
       }
+      .order-panel { width: clamp(460px, 36vw, 620px); }
       .order-title { font-size: 1.4rem; }
       .summary-row.total { font-size: 1.2rem; }
       .summary-row.total span:last-child { font-size: 1.5rem; }
@@ -1888,13 +1909,14 @@
         gap: 28px;
         padding: 24px 40px 32px;
       }
+      .order-panel { width: clamp(520px, 34vw, 680px); }
     }
 
     /* ========== TABLET LANDSCAPE (701px–900px) ========== */
     /* Tablets in landscape (e.g. 768px-900px wide) need tighter layout */
     @media (min-width: 701px) and (max-width: 900px) {
       .pos-layout { grid-template-columns: 1fr clamp(300px, 45%, 420px); gap: 12px; padding: 12px 14px 14px; }
-      .order-panel { min-width: 0; }
+      .order-panel { width: clamp(300px, 45vw, 420px); }
       .menu-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
       .menu-item { padding: 12px 12px; }
       .menu-item-emoji { font-size: 1.7rem; }
