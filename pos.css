@@ -67,6 +67,12 @@
       --sidebar-bg: #0f172a;
       --input-bg: #374151;
       --shadow: 0 4px 24px rgba(0,0,0,0.4);
+
+      /* Height of the fixed top navbar (.sidebar). Single source of truth —
+         every breakpoint that changes the navbar's height overrides this
+         instead of its own copy of the pixel value, so .main-content and
+         .order-panel can never drift out of sync with the navbar again. */
+      --navbar-h: 60px;
     }
 
     [data-theme="light"] {
@@ -261,14 +267,10 @@
     /* (kept the .sidebar / .sidebar-header / .nav-links class names so the
        existing JS — toggleSidebar()/closeSidebar() — keeps working unchanged.
        Visually this is now a horizontal bar pinned to the very top of the app.
-       It's position:fixed (full width, top:0) with a z-index above the
-       order panel (60), so on the New Order page it always draws ON TOP of
-       the order panel's top edge and stays fully visible/clickable across
-       its entire width — the order panel can still span the full viewport
-       height behind it without ever covering it. Since this removes the
-       navbar from normal document flow, .main-content gets a matching
-       margin-top below so every page's content still starts in the same
-       place as before. */
+       It's position:fixed (full width, top:0). Both .main-content and
+       .order-panel are offset by --navbar-h so nothing ever sits underneath
+       it — see that variable in :root and its per-breakpoint overrides
+       below. */
     .sidebar {
       position: fixed;
       top: 0;
@@ -282,7 +284,7 @@
       gap: 4px;
       border-right: none;
       border-bottom: 1px solid rgba(255,255,255,0.07);
-      z-index: 300; /* above .order-panel (60) and .topbar (50) */
+      z-index: 300;
       flex-shrink: 0;
       padding: 0 12px;
       min-height: 60px;
@@ -505,7 +507,7 @@
       /* .sidebar is now position:fixed (removed from normal flow) so this
          margin-top reserves the same space it used to occupy, keeping
          every page's content starting in the same place as before. */
-      margin-top: 60px;
+      margin-top: var(--navbar-h);
     }
 
     /* TOP BAR */
@@ -574,8 +576,8 @@
     /* ========== POS LAYOUT ========== */
     /* The right grid column is just reserved empty space — the order panel
        itself is position:fixed (see .order-panel below) so it can span the
-       FULL viewport height edge-to-edge, including the area behind the top
-       navbar. This column keeps the menu panel from running underneath it. */
+       full height below the navbar independent of this grid's scroll.
+       This column keeps the menu panel from running underneath it. */
     .pos-layout {
       display: grid;
       grid-template-columns: 1fr clamp(400px, 38vw, 580px);
@@ -808,21 +810,20 @@
 
     /* ========== IMPROVED ORDER PANEL ========== */
     /* ===== ORDER PANEL — REDESIGNED ===== */
-    /* Full-height edge-to-edge sidebar on the right, spanning the ENTIRE
-       viewport top-to-bottom — including the strip behind the top navbar.
-       It's position:fixed so its height is independent of .pos-layout/
-       .page-content scroll — but since this element lives inside
-       #page-pos, which is display:none on every other page, it
+    /* Full-height sidebar on the right, spanning the full height BELOW the
+       top navbar. It's position:fixed so its height is independent of
+       .pos-layout/.page-content scroll — but since this element lives
+       inside #page-pos, which is display:none on every other page, it
        automatically disappears outside the New Order page with no JS
        changes needed. Width matches the empty grid column reserved in
        .pos-layout so the menu panel doesn't run underneath it.
-       The navbar (.sidebar) is ALSO position:fixed (see its rule) with a
-       higher z-index, so it draws on top of this panel and stays fully
-       visible/clickable across its whole width — this panel doesn't need
-       to "stop" before the navbar, the navbar simply paints over it. */
+       top uses --navbar-h (the same variable .main-content uses) so the
+       panel starts exactly where the fixed navbar ends — its header
+       (order number, item count, mobile "← Back" button) is never drawn
+       underneath the opaque navbar and stays visible/clickable. */
     .order-panel {
       position: fixed;
-      top: 0;
+      top: var(--navbar-h);
       right: 0;
       bottom: 0;
       width: clamp(400px, 38vw, 580px);
@@ -842,9 +843,8 @@
       overflow-y: auto;
       overflow-x: hidden;
       box-shadow: -6px 0 28px rgba(0,0,0,0.22);
-      z-index: 60; /* below .sidebar (now 300 — see .sidebar rule), so the
-                      navbar draws on top of this panel's top edge instead
-                      of being covered by it. Still above .topbar (50). */
+      z-index: 60; /* above .topbar (50); no longer needs to compete with
+                      .sidebar (300) since the panel no longer overlaps it. */
     }
 
 
@@ -1656,8 +1656,8 @@
        top in one row; the nav-links scroll horizontally if they don't all
        fit, and the cashier name/text trims to keep things compact. ----- */
     @media (max-width: 1099px) {
+      :root { --navbar-h: 56px; }
       .sidebar { min-height: 56px; gap: 2px; padding: 0 8px; }
-      .main-content { margin-top: 56px; }
       .sidebar-header { padding: 8px 10px 8px 2px; }
       .nav-item { padding: 9px 11px; font-size: 0.8rem; }
       .nav-item span:last-child { display: inline; }
@@ -1714,7 +1714,16 @@
       #page-pos { height: auto; }
       .menu-panel { min-height: 0; height: auto; }
       .order-panel { display: none; }
-      .order-panel.show-mobile { display: flex; position: fixed; inset: 0; z-index: 250; border-radius: 0; }
+      .order-panel.show-mobile {
+        display: flex;
+        position: fixed;
+        top: var(--navbar-h);
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 250;
+        border-radius: 0;
+      }
 
       .page.active { padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)); }
       #page-pos.active { padding: 0 !important; }
@@ -1729,8 +1738,8 @@
     @media (max-width: 700px) and (orientation: landscape) {
 
       /* Collapse top navbar to minimum height */
+      :root { --navbar-h: 44px; }
       .sidebar { min-height: 44px; padding: 0 8px; }
-      .main-content { margin-top: 44px; }
       .sidebar-header { padding: 4px 0; }
       .brand-sub { display: none; }
       .nav-logo { width: 30px; height: 30px; font-size: 0.95rem; }
@@ -1772,7 +1781,10 @@
         display: flex;
         flex-direction: column;
         position: fixed;
-        inset: 0;
+        top: var(--navbar-h);
+        left: 0;
+        right: 0;
+        bottom: 0;
         z-index: 250;
         border-radius: 0;
         padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
