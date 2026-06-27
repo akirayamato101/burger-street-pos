@@ -1732,9 +1732,12 @@
     }
 
     /* ----- Phone landscape (≤700px wide, landscape orientation):
-       Tab-based layout — each panel gets full-screen width,
-       switched via a bottom tab bar. Far more usable than trying
-       to squeeze two panels side-by-side on a small phone. ----- */
+       Single-column layout, same FAB + fullscreen-overlay mechanic
+       as portrait. Tapping the floating cart button (🛒) brings the
+       order panel out fullscreen, which visually covers the FAB
+       (panel z-index 250 > FAB z-index 140) — so the FAB appears to
+       "hide" while the order panel is open, then reappears once the
+       "← Back" button closes it. No separate tab bar needed. ----- */
     @media (max-width: 700px) and (orientation: landscape) {
 
       /* Collapse top navbar to minimum height */
@@ -1754,12 +1757,13 @@
         padding: 0 !important;
       }
 
-      /* Single-column; bottom padding = tab bar height */
+      /* Single-column; bottom padding leaves room for the floating
+         cart button (FAB) so it doesn't overlap the last menu row */
       .pos-layout {
         grid-template-columns: 1fr;
         height: 100%;
         overflow: hidden;
-        padding: 8px 10px calc(52px + env(safe-area-inset-bottom, 0px));
+        padding: 8px 10px calc(80px + env(safe-area-inset-bottom, 0px));
       }
 
       /* Menu panel: full width, scrollable */
@@ -1787,7 +1791,6 @@
         bottom: 0;
         z-index: 250;
         border-radius: 0;
-        padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
       }
 
       /* Tighten order panel contents */
@@ -1803,73 +1806,7 @@
       .quick-cash-btn { padding: 4px 2px; font-size: 0.68rem; }
       .btn-charge { padding: 11px; font-size: 1rem; }
       .cash-input { font-size: 0.95rem; padding: 8px 10px; }
-
-      /* Show the landscape tab bar */
-      .landscape-tab-bar { display: flex !important; }
-
-      /* Hide floating cart button — tab bar replaces it */
-      .float-cart-btn { display: none !important; }
-
-      /* Hide "← Back" button — tab bar handles navigation */
-      .btn-back-menu { display: none !important; }
     }
-
-    /* ── Landscape Tab Bar (hidden by default, shown only in landscape MQ) ── */
-    .landscape-tab-bar {
-      display: none; /* hidden on portrait / desktop */
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: calc(52px + env(safe-area-inset-bottom, 0px));
-      padding-bottom: env(safe-area-inset-bottom, 0px);
-      background: var(--sidebar-bg);
-      border-top: 1px solid rgba(255,255,255,0.1);
-      z-index: 300;
-      align-items: stretch;
-    }
-    .ltab {
-      flex: 1;
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: var(--text3);
-      cursor: pointer;
-      border: none;
-      background: transparent;
-      font-family: 'Nunito', sans-serif;
-      letter-spacing: 0.5px;
-      transition: color 0.2s, background 0.2s;
-      position: relative;
-      border-top: 3px solid transparent;
-    }
-    .ltab .ltab-icon { font-size: 1.1rem; }
-    .ltab.active {
-      color: var(--orange);
-      border-top-color: var(--orange);
-      background: rgba(232,124,30,0.08);
-    }
-    .ltab-badge {
-      position: absolute;
-      top: 6px;
-      right: calc(50% - 42px);
-      background: #ef4444;
-      color: #fff;
-      width: 17px;
-      height: 17px;
-      border-radius: 50%;
-      font-size: 0.6rem;
-      font-weight: 800;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Nunito', sans-serif;
-    }
-    .ltab-badge.hidden { display: none; }
 
     /* ========== FLOATING CART BTN (mobile) ========== */
     .float-cart-btn {
