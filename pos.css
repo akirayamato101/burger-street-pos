@@ -813,9 +813,21 @@
       border-radius: 0;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      /* overflow-y:auto is a SAFETY NET: .order-items is still the main
+         scroll area in normal cases, but on short viewports (tablets in
+         landscape) the header + summary + payment + numpad + charge button
+         can together be taller than the screen. With overflow:hidden here,
+         the charge button would get clipped off-screen with no way to
+         reach it. overflow-y:auto lets the whole panel scroll as a
+         fallback so every control stays reachable. */
+      overflow-y: auto;
+      overflow-x: hidden;
       box-shadow: -6px 0 28px rgba(0,0,0,0.22);
-      z-index: 60; /* above .topbar (50), below .overlay/mobile nav (90/200) */
+      z-index: 210; /* above .topbar (50) and .sidebar nav (200) — this only
+                       matters on screens ≥701px, where the hamburger dropdown
+                       (also z-index 200) is never shown at the same time as
+                       this fixed panel, so there's no conflict. Stays below
+                       the mobile cart overlay (250) and lock screen (9999). */
     }
 
     .order-header {
@@ -1925,4 +1937,37 @@
       .payment-section { padding: 8px 12px 10px; }
       .quick-cash { gap: 5px; }
       .quick-cash-btn { padding: 5px 7px; font-size: 0.72rem; }
+    }
+
+    /* ----- SHORT VIEWPORTS (tablets/phones in landscape, ≥701px wide) -----
+       The width-based breakpoints above assume a tall portrait screen, so
+       they don't compact things enough when height is the real constraint —
+       e.g. a tablet rotated to landscape (1024×768, 1280×800, etc.) is wide
+       enough to skip the phone-landscape tab-bar layout, but not tall enough
+       to fit the order panel's header+summary+payment+numpad+charge button
+       all at once. This targets that case directly using max-height instead
+       of max-width, so it catches any landscape tablet, regardless of its
+       exact pixel width. (.order-panel itself can still scroll as a final
+       fallback — see overflow-y:auto above — but compacting first means
+       scrolling is rarely actually needed.) */
+    @media (min-width: 701px) and (max-height: 600px) {
+      .order-header { padding: 8px 14px; }
+      .order-title { font-size: 1.05rem; }
+      .order-items { padding: 6px 10px; min-height: 70px; }
+      .order-empty { height: 80px; }
+      .order-empty-icon { font-size: 1.8rem; }
+      .order-summary { padding: 6px 14px 4px; gap: 2px; }
+      .summary-row { font-size: 0.78rem; }
+      .summary-row.total { font-size: 0.95rem; padding: 5px 0 2px; }
+      .summary-row.total span:last-child { font-size: 1.1rem; }
+      .payment-section { padding: 6px 14px 8px; gap: 5px; }
+      .payment-label { font-size: 0.75rem; }
+      .pay-method-btn { padding: 7px; font-size: 0.8rem; }
+      .cash-tendered-row { padding: 6px 10px; }
+      .cash-input { font-size: 0.85rem; padding: 6px 8px; }
+      .quick-cash { gap: 4px; }
+      .quick-cash-btn { padding: 4px 2px; font-size: 0.68rem; }
+      .change-display { padding: 6px 10px; }
+      .btn-charge { padding: 9px; font-size: 0.95rem; }
+      .btn-clear-order { padding: 6px; font-size: 0.78rem; }
     }
