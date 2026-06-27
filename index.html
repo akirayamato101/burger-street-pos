@@ -156,11 +156,23 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <div class="cashier-display">
-        <span class="cashier-label">👤 Cashier</span>
-        <span class="cashier-name" id="cashierName">Cashier</span>
+      <div class="cashier-dropdown" id="cashierDropdown">
+        <button class="cashier-dropdown-trigger" id="cashierDropdownBtn" onclick="toggleCashierDropdown(event)" aria-expanded="false" aria-haspopup="true">
+          <span class="cashier-avatar">👤</span>
+          <span class="cashier-name" id="cashierName">Cashier</span>
+          <span class="cashier-caret" id="cashierCaret">▾</span>
+        </button>
+        <div class="cashier-dropdown-menu" id="cashierDropdownMenu" role="menu">
+          <div class="cashier-dropdown-info">
+            <span class="cdrop-label">Signed in as</span>
+            <span class="cdrop-name" id="cashierDropName">Cashier</span>
+          </div>
+          <div class="cashier-dropdown-divider"></div>
+          <button class="cashier-dropdown-item danger" onclick="logOut(); closeCashierDropdown()" role="menuitem">
+            🔒 Lock Terminal
+          </button>
+        </div>
       </div>
-      <button class="btn-logout" onclick="logOut()">🔒 Lock Terminal</button>
     </div>
   </nav>
 
@@ -1180,6 +1192,42 @@
         if (ltabOrder) ltabOrder.classList.remove('active');
       });
     });
+  });
+
+  /* ── Cashier Dropdown ── */
+  function toggleCashierDropdown(e) {
+    e.stopPropagation();
+    const menu = document.getElementById('cashierDropdownMenu');
+    const btn  = document.getElementById('cashierDropdownBtn');
+    const caret = document.getElementById('cashierCaret');
+    const isOpen = menu.classList.toggle('open');
+    btn.setAttribute('aria-expanded', isOpen);
+    caret.textContent = isOpen ? '▴' : '▾';
+  }
+
+  function closeCashierDropdown() {
+    const menu  = document.getElementById('cashierDropdownMenu');
+    const btn   = document.getElementById('cashierDropdownBtn');
+    const caret = document.getElementById('cashierCaret');
+    if (!menu) return;
+    menu.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    caret.textContent = '▾';
+  }
+
+  /* Close the dropdown when clicking anywhere outside it */
+  document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('cashierDropdown');
+    if (dropdown && !dropdown.contains(e.target)) closeCashierDropdown();
+  });
+
+  /* Keep cashierDropName in sync with cashierName (set by POS JS) */
+  document.addEventListener('DOMContentLoaded', () => {
+    const nameEl = document.getElementById('cashierName');
+    const dropEl = document.getElementById('cashierDropName');
+    if (!nameEl || !dropEl) return;
+    const obs = new MutationObserver(() => { dropEl.textContent = nameEl.textContent; });
+    obs.observe(nameEl, { childList: true, characterData: true, subtree: true });
   });
 </script>
 </body>
