@@ -549,6 +549,43 @@
       white-space: nowrap;
     }
 
+
+    /* ========== POS PAGE FULL-WIDTH TOPBAR ========== */
+    /* This topbar is INSIDE #page-pos and spans the full row width,
+       covering both the menu panel and the order panel (which is now
+       in-flow, not fixed). It sticks to the top of the page-pos flex column. */
+    .topbar-pos {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 24px;
+      height: 56px;
+      flex-shrink: 0;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .topbar-pos .page-title {
+      font-family: 'Bangers', cursive;
+      font-size: 1.5rem;
+      color: var(--orange);
+      letter-spacing: 1px;
+    }
+    .topbar-pos-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: auto;
+    }
+    /* Override dropdown menu direction — open downward from the topbar */
+    .topbar-pos .cashier-dropdown-menu {
+      bottom: auto;
+      top: calc(100% + 8px);
+      right: 0;
+    }
+
     /* ========== PAGE CONTENT ========== */
     .page-content {
       overflow-y: auto;
@@ -571,6 +608,22 @@
       height: 100%;
     }
 
+    /* Hide the default topbar when POS page is active — the POS section
+       has its own full-width topbar (topbar-pos) that spans over both
+       the menu and order panels. */
+    #page-pos.active ~ * .topbar-default,
+    .page-content:has(#page-pos.active) ~ .topbar-default {
+      display: none;
+    }
+    /* Simpler approach: hide default topbar when page-pos is active */
+    body:has(#page-pos.active) .topbar-default {
+      display: none;
+    }
+    /* When page-pos is NOT active, hide the pos topbar */
+    body:not(:has(#page-pos.active)) .topbar-pos {
+      display: none;
+    }
+
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
     /* ========== POS LAYOUT ========== */
@@ -581,10 +634,12 @@
     .pos-layout {
       display: grid;
       grid-template-columns: 1fr clamp(400px, 38vw, 580px);
-      gap: 20px;
-      height: 100%;
+      gap: 0;
+      /* flex: 1 so it fills the remaining height after .topbar-pos */
+      flex: 1;
+      min-height: 0;
       overflow: hidden;
-      padding: 16px 24px 24px;
+      padding: 0;
     }
 
     /* ---- LEFT: Menu Panel ---- */
@@ -592,6 +647,8 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      padding: 16px 24px 24px;
+      /* Left panel gets padding; right panel (order) has its own internal spacing */
     }
 
     .search-bar {
@@ -822,29 +879,18 @@
        (order number, item count, mobile "← Back" button) is never drawn
        underneath the opaque navbar and stays visible/clickable. */
     .order-panel {
-      position: fixed;
-      top: var(--navbar-h);
-      right: 0;
-      bottom: 0;
-      width: clamp(400px, 38vw, 580px);
+      /* In-flow: sits in the right grid column of .pos-layout.
+         Height fills the grid row (same as menu panel). */
+      position: relative;
+      display: flex;
+      flex-direction: column;
       background: var(--card-bg);
       border: none;
       border-left: 1px solid var(--border);
       border-radius: 0;
-      display: flex;
-      flex-direction: column;
-      /* overflow-y:auto is a SAFETY NET: .order-items is still the main
-         scroll area in normal cases, but on short viewports (tablets in
-         landscape) the header + summary + payment + numpad + charge button
-         can together be taller than the screen. With overflow:hidden here,
-         the charge button would get clipped off-screen with no way to
-         reach it. overflow-y:auto lets the whole panel scroll as a
-         fallback so every control stays reachable. */
       overflow-y: auto;
       overflow-x: hidden;
-      box-shadow: -6px 0 28px rgba(0,0,0,0.22);
-      z-index: 60; /* above .topbar (50); no longer needs to compete with
-                      .sidebar (300) since the panel no longer overlaps it. */
+      /* No fixed width/top/right/bottom — the grid column defines the width */
     }
 
 
@@ -1670,8 +1716,8 @@
          proportional share so it doesn't crowd out the menu grid.
          Width must match the grid spacer column above. top must match
          .sidebar's min-height (56px) at this breakpoint. */
-      .pos-layout { grid-template-columns: 1.2fr clamp(340px, 42%, 500px); gap: 14px; padding: 14px 16px 16px; }
-      .order-panel { width: clamp(340px, 42vw, 500px); }
+      .pos-layout { grid-template-columns: 1.2fr clamp(340px, 42%, 500px); gap: 0; padding: 0; }
+      .menu-panel { padding: 14px 16px 16px; }
     }
 
     /* ----- Phone (≤700px, e.g. Android phones): collapse the nav links
@@ -1712,14 +1758,16 @@
       .btn-logout::before { content: '🔒'; font-size: 1.05rem; }
 
       /* Portrait phones: single column, order panel as fullscreen overlay */
-      .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px)); }
+      .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; padding: 0; }
+      .menu-panel { padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px)); min-height: 0; height: auto; }
       #page-pos { height: auto; }
-      .menu-panel { min-height: 0; height: auto; }
+      /* On mobile, hide the pos topbar — nav is already in the top navbar */
+      .topbar-pos { display: none !important; }
       .order-panel { display: none; }
       .order-panel.show-mobile {
         display: flex;
         position: fixed;
-        top: var(--navbar-h);
+        top: calc(var(--navbar-h) + 56px); /* navbar + topbar-pos height */
         left: 0;
         right: 0;
         bottom: 0;
@@ -1771,6 +1819,9 @@
         grid-template-columns: 1fr;
         height: 100%;
         overflow: hidden;
+        padding: 0;
+      }
+      .menu-panel {
         padding: 8px 10px calc(90px + env(safe-area-inset-bottom, 0px));
       }
 
@@ -1793,7 +1844,7 @@
         display: flex;
         flex-direction: column;
         position: fixed;
-        top: var(--navbar-h);
+        top: calc(var(--navbar-h) + 44px); /* navbar + topbar-pos at this breakpoint */
         left: 0;
         right: 0;
         bottom: 0;
@@ -1877,10 +1928,10 @@
     @media (min-width: 1400px) {
       .pos-layout {
         grid-template-columns: 1fr clamp(460px, 36vw, 620px);
-        gap: 24px;
-        padding: 20px 32px 28px;
+        gap: 0;
+        padding: 0;
       }
-      .order-panel { width: clamp(460px, 36vw, 620px); }
+      .menu-panel { padding: 20px 32px 28px; }
       .order-title { font-size: 1.4rem; }
       .summary-row.total { font-size: 1.2rem; }
       .summary-row.total span:last-child { font-size: 1.5rem; }
@@ -1896,10 +1947,10 @@
     @media (min-width: 1800px) {
       .pos-layout {
         grid-template-columns: 1fr clamp(520px, 34vw, 680px);
-        gap: 28px;
-        padding: 24px 40px 32px;
+        gap: 0;
+        padding: 0;
       }
-      .order-panel { width: clamp(520px, 34vw, 680px); }
+      .menu-panel { padding: 24px 40px 32px; }
     }
 
     /* ========== NARROWER TABLET WIDTHS (701px-900px) ========== */
@@ -1915,8 +1966,8 @@
        e.g. 1024×768), and overrides the touch-target sizing in
        .order-header/.order-items/etc below. */
     @media (min-width: 701px) and (max-width: 900px) and (min-height: 501px) {
-      .pos-layout { grid-template-columns: 1fr clamp(300px, 45%, 420px); gap: 12px; padding: 12px 14px 14px; }
-      .order-panel { width: clamp(300px, 45vw, 420px); }
+      .pos-layout { grid-template-columns: 1fr clamp(300px, 45%, 420px); gap: 0; padding: 0; }
+      .menu-panel { padding: 12px 14px 14px; }
       .menu-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
       .menu-item { padding: 12px 12px; }
       .menu-item-emoji { font-size: 1.7rem; }
