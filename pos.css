@@ -76,7 +76,7 @@
       /* Extra breathing room between the fixed top navbar and the page
          content below it (.main-content only — the mobile cart overlay
          intentionally stays flush, see its `top: var(--navbar-h)` rules). */
-      --navbar-gap: 10px;
+      --navbar-gap: 22px;
     }
 
     [data-theme="light"] {
