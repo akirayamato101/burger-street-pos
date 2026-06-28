@@ -196,33 +196,36 @@
 
       <!-- ===== POS PAGE ===== -->
       <section id="page-pos" class="page active">
-        <!-- POS topbar spans full width (menu + order panel) -->
-        <header class="topbar topbar-pos">
-          <button class="menu-btn" onclick="toggleSidebar()">☰</button>
-          <h2 class="page-title">New Order</h2>
-          <div class="topbar-pos-right">
-            <span class="date-display" id="currentDatePos"></span>
-            <span id="topbarOrderNumPos" style="font-size:0.78rem;color:var(--text3);font-weight:600"></span>
-            <div class="cashier-dropdown" id="cashierDropdownPos">
-              <button class="cashier-dropdown-trigger" id="cashierDropdownBtnPos" onclick="toggleCashierDropdown(event)" aria-expanded="false" aria-haspopup="true">
-                <span class="cashier-avatar">👤</span>
-                <span class="cashier-name" id="cashierNamePos">Cashier</span>
-                <span class="cashier-caret" id="cashierCaretPos">▾</span>
-              </button>
-              <div class="cashier-dropdown-menu" id="cashierDropdownMenuPos" role="menu">
-                <div class="cashier-dropdown-info">
-                  <span class="cdrop-label">Signed in as</span>
-                  <span class="cdrop-name" id="cashierDropNamePos">Cashier</span>
-                </div>
-                <div class="cashier-dropdown-divider"></div>
-                <button class="cashier-dropdown-item danger" onclick="logOut(); closeCashierDropdown()" role="menuitem">
-                  🔒 Lock Terminal
-                </button>
-              </div>
-            </div>
-          </div>
-        </header>
         <div class="pos-layout">
+
+          <!-- LEFT: Navbar + Menu column -->
+          <div class="pos-left-col">
+            <!-- POS topbar: only above the menu panel -->
+            <header class="topbar topbar-pos">
+              <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+              <h2 class="page-title">New Order</h2>
+              <div class="topbar-pos-right">
+                <span class="date-display" id="currentDatePos"></span>
+                <span id="topbarOrderNumPos" style="font-size:0.78rem;color:var(--text3);font-weight:600"></span>
+                <div class="cashier-dropdown" id="cashierDropdownPos">
+                  <button class="cashier-dropdown-trigger" id="cashierDropdownBtnPos" onclick="toggleCashierDropdown(event)" aria-expanded="false" aria-haspopup="true">
+                    <span class="cashier-avatar">👤</span>
+                    <span class="cashier-name" id="cashierNamePos">Cashier</span>
+                    <span class="cashier-caret" id="cashierCaretPos">▾</span>
+                  </button>
+                  <div class="cashier-dropdown-menu" id="cashierDropdownMenuPos" role="menu">
+                    <div class="cashier-dropdown-info">
+                      <span class="cdrop-label">Signed in as</span>
+                      <span class="cdrop-name" id="cashierDropNamePos">Cashier</span>
+                    </div>
+                    <div class="cashier-dropdown-divider"></div>
+                    <button class="cashier-dropdown-item danger" onclick="logOut(); closeCashierDropdown()" role="menuitem">
+                      🔒 Lock Terminal
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </header>
 
           <!-- LEFT: Menu -->
           <div class="menu-panel">
@@ -239,6 +242,7 @@
               </div>
             </div>
           </div>
+          </div><!-- end pos-left-col -->
 
           <!-- RIGHT: Order Panel -->
           <div class="order-panel" id="orderPanel">
