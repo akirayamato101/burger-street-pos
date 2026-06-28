@@ -72,7 +72,7 @@
          every breakpoint that changes the navbar's height overrides this
          instead of its own copy of the pixel value, so .main-content and
          .order-panel can never drift out of sync with the navbar again. */
-      --navbar-h: 60px;
+      --navbar-h: 46px;
     }
 
     [data-theme="light"] {
@@ -287,29 +287,29 @@
       z-index: 300;
       flex-shrink: 0;
       padding: 0 12px;
-      min-height: 60px;
+      min-height: 46px;
     }
 
     .sidebar-header {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 14px 10px 4px;
+      padding: 6px 14px 6px 4px;
       border-bottom: none;
       border-right: 1px solid rgba(255,255,255,0.07);
       flex-shrink: 0;
     }
 
     .nav-logo {
-      width: 38px;
-      height: 38px;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
       border: 2px solid var(--orange);
       background: var(--orange);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.2rem;
+      font-size: 1rem;
       flex-shrink: 0;
     }
 
@@ -345,7 +345,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 10px 14px;
+      padding: 6px 14px;
       color: var(--text2);
       text-decoration: none;
       font-weight: 600;
@@ -370,7 +370,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 8px 4px 8px 14px;
+      padding: 4px 4px 4px 14px;
       border-top: none;
       border-left: 1px solid rgba(255,255,255,0.07);
       flex-shrink: 0;
@@ -1702,10 +1702,10 @@
        top in one row; the nav-links scroll horizontally if they don't all
        fit, and the cashier name/text trims to keep things compact. ----- */
     @media (max-width: 1099px) {
-      :root { --navbar-h: 56px; }
-      .sidebar { min-height: 56px; gap: 2px; padding: 0 8px; }
-      .sidebar-header { padding: 8px 10px 8px 2px; }
-      .nav-item { padding: 9px 11px; font-size: 0.8rem; }
+      :root { --navbar-h: 48px; }
+      .sidebar { min-height: 48px; gap: 2px; padding: 0 8px; }
+      .sidebar-header { padding: 6px 10px 6px 2px; }
+      .nav-item { padding: 7px 11px; font-size: 0.8rem; }
       .nav-item span:last-child { display: inline; }
       .cashier-label { display: none; }
       .cashier-dropdown-trigger { padding: 5px 9px; }
@@ -1713,7 +1713,7 @@
       /* Order panel: use a fixed min-width so it stays usable, and a
          proportional share so it doesn't crowd out the menu grid.
          Width must match the grid spacer column above. top must match
-         .sidebar's min-height (56px) at this breakpoint. */
+         .sidebar's min-height (48px) at this breakpoint. */
       .pos-layout { grid-template-columns: 1.2fr clamp(340px, 42%, 500px); gap: 0; padding: 0; }
       .menu-panel { padding: 14px 16px 16px; }
     }
@@ -1724,7 +1724,7 @@
     @media (max-width: 700px) {
       .menu-btn { display: flex; order: -1; }
       .sidebar { flex-wrap: nowrap; }
-      .sidebar-header { border-right: none; padding: 8px 0; flex: 1; }
+      .sidebar-header { border-right: none; padding: 6px 0; flex: 1; }
       .brand-sub { display: none; }
 
       .nav-links {
@@ -1738,13 +1738,13 @@
         background: var(--sidebar-bg);
         border-bottom: 1px solid rgba(255,255,255,0.07);
         box-shadow: 0 10px 24px rgba(0,0,0,0.4);
-        max-height: calc(100dvh - 56px);
+        max-height: calc(100dvh - 46px);
         overflow-y: auto;
         padding: 6px 0;
         z-index: 200;
       }
       .sidebar.open .nav-links { display: flex; }
-      .nav-item { border-bottom: none; border-left: 3px solid transparent; border-radius: 0; padding: 13px 18px; font-size: 0.9rem; }
+      .nav-item { border-bottom: none; border-left: 3px solid transparent; border-radius: 0; padding: 11px 18px; font-size: 0.9rem; }
       .nav-item.active { border-bottom: none; border-left-color: var(--orange); }
 
       .sidebar-footer { border-left: none; padding: 0; gap: 8px; }
