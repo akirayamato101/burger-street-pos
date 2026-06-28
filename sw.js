@@ -3,24 +3,35 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v11';
+const CACHE_NAME = 'burger-pos-v12';
 
+// IMPORTANT: paths are RELATIVE (no leading "/"). This app is hosted on
+// GitHub Pages as a PROJECT site (https://<user>.github.io/burger-street-pos/),
+// not at the domain root. A leading "/" resolves against the *origin*
+// (https://<user>.github.io/pos.css) instead of the app's real folder
+// (https://<user>.github.io/burger-street-pos/pos.css), so every one of
+// these used to 404. That silently breaks/aborts the precache on install
+// and means the runtime fetch handler's caches.match() fallback can never
+// find a match either — which is what was actually causing phones (slower/
+// flakier first loads, more likely to hit the offline-fallback branch) to
+// get stuck on missing or stale assets, while desktops on a fast reliable
+// connection almost always succeeded over the network and never noticed.
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/pos.css',
-  // Must match the exact URLs (including the ?v=1 cache-busting query string)
+  './',
+  './index.html',
+  // Must match the exact URL (including the ?v=4 cache-busting query string)
   // that index.html actually requests — the Cache API matches by full URL,
   // so a precached entry without the query string would never be found by
-  // caches.match() for these requests, leaving the app unable to load its
-  // own code on a first-ever offline launch.
-  '/js/firebase-config.js?v=1',
-  '/js/cloud-storage.js?v=1',
-  '/pos-part1.js?v=2',
-  '/pos-part2.js?v=3',
-  '/pos-part3.js?v=3',
-  '/pos-part4.js?v=1',
-  '/manifest.json',
+  // caches.match() for this request, leaving the app unable to load its
+  // own styles on a first-ever offline launch.
+  './pos.css?v=4',
+  './js/firebase-config.js?v=1',
+  './js/cloud-storage.js?v=1',
+  './pos-part1.js?v=2',
+  './pos-part2.js?v=3',
+  './pos-part3.js?v=3',
+  './pos-part4.js?v=1',
+  './manifest.json',
   // Dexie.js from CDN — cache it so app works fully offline
   'https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js',
   // jsPDF + autotable — used to export the Daily Inventory Report as a PDF;
@@ -81,7 +92,13 @@ self.addEventListener('fetch', event => {
         }
         return response;
       }).catch(() => caches.match(event.request).then(cached => {
-        return cached || (event.request.mode === 'navigate' ? caches.match('/index.html') : undefined);
+        // Use new URL(...).href rather than a bare './index.html' string —
+        // self.registration.scope gives the correct absolute base
+        // (https://<user>.github.io/burger-street-pos/) regardless of
+        // which sub-path of the app this request came from.
+        return cached || (event.request.mode === 'navigate'
+          ? caches.match(new URL('index.html', self.registration.scope).href)
+          : undefined);
       }))
     );
     return;
@@ -100,7 +117,7 @@ self.addEventListener('fetch', event => {
       });
     }).catch(() => {
       if (event.request.mode === 'navigate') {
-        return caches.match('/index.html');
+        return caches.match(new URL('index.html', self.registration.scope).href);
       }
     })
   );
