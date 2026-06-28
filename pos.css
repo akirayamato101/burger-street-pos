@@ -73,6 +73,10 @@
          instead of its own copy of the pixel value, so .main-content and
          .order-panel can never drift out of sync with the navbar again. */
       --navbar-h: 46px;
+      /* Extra breathing room between the fixed top navbar and the page
+         content below it (.main-content only — the mobile cart overlay
+         intentionally stays flush, see its `top: var(--navbar-h)` rules). */
+      --navbar-gap: 10px;
     }
 
     [data-theme="light"] {
@@ -506,8 +510,9 @@
       min-height: 0;
       /* .sidebar is now position:fixed (removed from normal flow) so this
          margin-top reserves the same space it used to occupy, keeping
-         every page's content starting in the same place as before. */
-      margin-top: var(--navbar-h);
+         every page's content starting in the same place as before, plus
+         --navbar-gap so content isn't flush against the navbar. */
+      margin-top: calc(var(--navbar-h) + var(--navbar-gap));
     }
 
     /* TOP BAR */
