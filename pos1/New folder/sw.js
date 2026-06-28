@@ -3,16 +3,12 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v12';
+const CACHE_NAME = 'burger-pos-v11';
 
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/pos.css',
-  // New Order page redesign (CSS-only override, loaded right after pos.css —
-  // see index.html). Same caching rules apply: must match the exact
-  // ?v= query string index.html requests it with.
-  '/pos-page-redesign.css?v=1',
   // Must match the exact URLs (including the ?v=1 cache-busting query string)
   // that index.html actually requests — the Cache API matches by full URL,
   // so a precached entry without the query string would never be found by

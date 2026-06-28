@@ -1,0 +1,394 @@
+/* =============================================================
+   BURGER STREET POS — "CHAR-GRILL TICKET" REDESIGN
+   New Order page (#page-pos) ONLY.
+
+   HOW TO USE
+   -----------------------------------------------------------
+   Add this AFTER pos.css in index.html:
+     <link rel="stylesheet" href="pos.css">
+     <link rel="stylesheet" href="pos-page-redesign.css">
+
+   WHAT THIS FILE DOES
+   -----------------------------------------------------------
+   Pure CSS override. Every rule is scoped under #page-pos so it
+   can never bleed into Orders / Summary / Products / Inventory /
+   Settings, and never touches the shared sidebar (.cashier-dropdown,
+   .menu-btn used in the global header) — only the POS page's own
+   copies of those elements, scoped via #page-pos .topbar-pos.
+
+   No HTML attributes, ids, onclick handlers, or JS-facing class
+   names are changed, added, or removed — only how they look.
+   ============================================================= */
+
+#page-pos {
+  /* ---- Local palette — does not touch :root, so no other page
+     is affected. "Char-grill" identity: charcoal, ember, ticket
+     paper, grease-gold. ---- */
+  --pg-char: #18120f;
+  --pg-char2: #221a15;
+  --pg-char3: #2e2420;
+  --pg-ember: #ff6a2e;
+  --pg-ember-dark: #d6531f;
+  --pg-ember-glow: rgba(255, 106, 46, 0.35);
+  --pg-smoke: #a89e94;
+  --pg-smoke-dim: #6f655c;
+  --pg-paper: #f3e9d2;
+  --pg-paper-dark: #e6d8b8;
+  --pg-paper-line: #cdbb8e;
+  --pg-ink: #2a1f17;
+  --pg-grease: #d4a843;
+  --pg-green: #4caf6e;
+  --pg-red: #e34b3f;
+
+  background: var(--pg-char);
+}
+
+/* ===================== LEFT COLUMN / MENU ===================== */
+
+#page-pos .pos-left-col {
+  background:
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(255,106,46,0.07), transparent 60%),
+    var(--pg-char);
+}
+
+/* Topbar — scoped so the SHARED sidebar header elsewhere is untouched */
+#page-pos .topbar-pos {
+  background: linear-gradient(180deg, var(--pg-char2) 0%, var(--pg-char) 100%);
+  border-bottom: 1px solid var(--pg-char3);
+}
+#page-pos .topbar-pos .page-title {
+  font-family: 'Bangers', cursive;
+  letter-spacing: 1.5px;
+  color: var(--pg-ember);
+  text-shadow: 0 2px 0 rgba(0,0,0,0.4);
+}
+#page-pos .topbar-pos .menu-btn {
+  background: var(--pg-char3);
+  border: 1px solid var(--pg-smoke-dim);
+  border-radius: 8px;
+  color: var(--pg-smoke);
+}
+#page-pos .topbar-pos .menu-btn:hover { background: var(--pg-char3); border-color: var(--pg-ember); color: var(--pg-ember); }
+#page-pos .topbar-pos .date-display { color: var(--pg-smoke-dim); }
+
+/* Cashier dropdown — POS page's own instance only (#cashierDropdownPos) */
+#page-pos .topbar-pos .cashier-dropdown-trigger {
+  background: var(--pg-char3);
+  border: 1px solid var(--pg-smoke-dim);
+}
+#page-pos .topbar-pos .cashier-dropdown-trigger:hover { border-color: var(--pg-ember); }
+#page-pos .topbar-pos .cashier-name { color: var(--pg-smoke); }
+#page-pos .topbar-pos .cashier-dropdown-menu {
+  background: var(--pg-char2);
+  border: 1px solid var(--pg-char3);
+}
+#page-pos .topbar-pos .cdrop-name { color: var(--pg-smoke); }
+#page-pos .topbar-pos .cashier-dropdown-divider { background: var(--pg-char3); }
+#page-pos .topbar-pos .cashier-dropdown-item:hover { background: var(--pg-char3); }
+
+/* ---- Search ---- */
+#page-pos .search-input {
+  background: var(--pg-char2);
+  border: 1.5px solid var(--pg-char3);
+  border-radius: 10px;
+  color: var(--pg-smoke);
+}
+#page-pos .search-input:focus { border-color: var(--pg-ember); box-shadow: 0 0 0 3px var(--pg-ember-glow); }
+#page-pos .search-input::placeholder { color: var(--pg-smoke-dim); }
+
+/* ---- Category tabs — branded like grill-station labels ---- */
+#page-pos .cat-tab {
+  background: var(--pg-char2);
+  border: 1.5px solid var(--pg-char3);
+  color: var(--pg-smoke);
+  border-radius: 8px;
+  font-family: 'Bangers', cursive;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+#page-pos .cat-tab:hover { border-color: var(--pg-ember); color: var(--pg-ember); }
+#page-pos .cat-tab.active {
+  background: var(--pg-ember);
+  border-color: var(--pg-ember);
+  color: var(--pg-char);
+  box-shadow: 0 3px 12px var(--pg-ember-glow);
+}
+#page-pos .category-tabs::-webkit-scrollbar-thumb { background: var(--pg-ember); }
+#page-pos .category-tabs::-webkit-scrollbar-track { background: var(--pg-char2); }
+
+/* ---- Menu grid / cards — char-edge cards with a grill-glow on hover ---- */
+#page-pos .menu-grid::-webkit-scrollbar-thumb { background: var(--pg-char3); }
+
+#page-pos .menu-item {
+  background: linear-gradient(160deg, var(--pg-char2) 0%, var(--pg-char) 100%);
+  border: 1.5px solid var(--pg-char3);
+  border-radius: 12px;
+  position: relative;
+}
+/* grill-grate sear marks, purely decorative, behind content */
+#page-pos .menu-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: repeating-linear-gradient(
+    115deg,
+    transparent 0px,
+    transparent 10px,
+    rgba(255,255,255,0.018) 10px,
+    rgba(255,255,255,0.018) 12px
+  );
+  pointer-events: none;
+}
+#page-pos .menu-item:hover {
+  border-color: var(--pg-ember);
+  box-shadow: 0 0 0 1px var(--pg-ember-glow), 0 10px 26px rgba(255,106,46,0.18);
+  transform: translateY(-3px);
+}
+#page-pos .menu-item.in-cart {
+  border-color: var(--pg-ember);
+  box-shadow: 0 0 0 1px var(--pg-ember), 0 0 18px var(--pg-ember-glow);
+  background: linear-gradient(160deg, #2a1c12 0%, var(--pg-char) 100%);
+}
+#page-pos .menu-item.out-of-stock {
+  filter: grayscale(0.55) brightness(0.75);
+}
+#page-pos .menu-item-name { color: #f5ede0; font-weight: 800; }
+#page-pos .menu-item-price {
+  color: var(--pg-ember);
+  font-family: 'Bangers', cursive;
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
+}
+#page-pos .menu-item-cat {
+  color: var(--pg-smoke-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+#page-pos .menu-item-soldout-badge {
+  background: var(--pg-red);
+  font-family: 'Bangers', cursive;
+  letter-spacing: 0.5px;
+  transform: rotate(-4deg);
+}
+
+/* ---- Qty stepper on each card ---- */
+#page-pos .miq-btn {
+  border-radius: 6px;
+  border: 1.5px solid var(--pg-char3);
+  background: var(--pg-char3);
+  color: var(--pg-smoke);
+}
+#page-pos .miq-plus { background: var(--pg-ember); border-color: var(--pg-ember); color: var(--pg-char); }
+#page-pos .miq-plus:active { background: var(--pg-ember-dark); }
+#page-pos .miq-minus:active { background: var(--pg-ember); border-color: var(--pg-ember); color: var(--pg-char); }
+#page-pos .miq-plus.miq-disabled {
+  background: var(--pg-char3);
+  border-color: var(--pg-char3);
+  color: var(--pg-smoke-dim);
+}
+#page-pos .miq-count { color: var(--pg-smoke-dim); }
+#page-pos .miq-count.miq-active { color: var(--pg-ember); }
+
+#page-pos .empty-menu { color: var(--pg-smoke-dim); }
+
+/* ===================== RIGHT: ORDER PANEL — KITCHEN TICKET ===================== */
+
+#page-pos .order-panel {
+  background: var(--pg-paper);
+  border-left: 1px solid var(--pg-char3);
+  color: var(--pg-ink);
+  /* faint paper fiber texture */
+  background-image:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.015) 0px, rgba(0,0,0,0.015) 1px, transparent 1px, transparent 3px);
+}
+
+#page-pos .order-header {
+  background: var(--pg-char);
+  border-bottom: none;
+  position: relative;
+  padding-bottom: 18px;
+}
+/* torn-ticket zigzag edge where the chit meets the paper below */
+#page-pos .order-header::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 12px;
+  background: linear-gradient(135deg, var(--pg-paper) 50%, transparent 50%),
+              linear-gradient(45deg, var(--pg-paper) 50%, transparent 50%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 0;
+}
+#page-pos .order-title {
+  font-family: 'Bangers', cursive;
+  color: var(--pg-ember);
+  letter-spacing: 3px;
+}
+#page-pos .order-num {
+  background: var(--pg-ember-glow);
+  border: 1px solid var(--pg-ember);
+  color: #ffd9bf;
+}
+#page-pos .btn-back-menu {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.18);
+}
+
+#page-pos .order-items {
+  background: transparent;
+}
+#page-pos .order-items::-webkit-scrollbar-thumb { background: var(--pg-paper-line); }
+
+#page-pos .order-empty {
+  color: var(--pg-smoke-dim);
+}
+#page-pos .order-empty-icon { opacity: 0.45; }
+
+/* Order line items — dashed "receipt line" separators, no card chrome */
+#page-pos .order-item {
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--pg-paper-line);
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 10px 4px;
+}
+#page-pos .order-item:hover {
+  background: rgba(255,106,46,0.06);
+  border-bottom-color: var(--pg-ember-dark);
+}
+#page-pos .oi-name { color: var(--pg-ink); }
+#page-pos .oi-unit { color: var(--pg-smoke-dim); }
+#page-pos .oi-price { color: var(--pg-ember-dark); font-weight: 800; }
+#page-pos .oi-qty-btn {
+  background: var(--pg-paper-dark);
+  border: 1.5px solid var(--pg-paper-line);
+  color: var(--pg-ink);
+}
+#page-pos .oi-qty-btn:hover { background: var(--pg-ember); border-color: var(--pg-ember); color: #fff; }
+#page-pos .oi-qty-val {
+  background: var(--pg-paper-dark);
+  border: 1.5px solid var(--pg-paper-line);
+  color: var(--pg-ink);
+}
+#page-pos .oi-del {
+  background: rgba(227,75,63,0.12);
+  color: var(--pg-red);
+}
+#page-pos .oi-del:hover { background: rgba(227,75,63,0.25); }
+
+/* ---- Summary ---- */
+#page-pos .order-summary {
+  background: var(--pg-paper-dark);
+  border-top: 1px dashed var(--pg-paper-line);
+}
+#page-pos .summary-row { color: var(--pg-ink); }
+#page-pos .summary-row.total {
+  border-top: 2px solid var(--pg-ink);
+  color: var(--pg-ink);
+}
+#page-pos .summary-row.total span:last-child { color: var(--pg-ember-dark); }
+
+#page-pos .discount-input {
+  background: var(--pg-paper);
+  border: 1.5px solid var(--pg-paper-line);
+  color: var(--pg-ink);
+}
+#page-pos .discount-input:focus { border-color: var(--pg-ember-dark); }
+#page-pos .discount-type-btn {
+  background: var(--pg-paper);
+  border: 1.5px solid var(--pg-paper-line);
+  color: var(--pg-ink);
+}
+#page-pos .discount-type-btn.active { background: var(--pg-ember); border-color: var(--pg-ember); color: #fff; }
+
+/* ---- Payment section ---- */
+#page-pos .payment-section {
+  background: var(--pg-char);
+}
+#page-pos .payment-label { color: var(--pg-smoke-dim); }
+
+#page-pos .pay-method-btn {
+  background: var(--pg-char2);
+  border: 1.5px solid var(--pg-char3);
+  color: var(--pg-smoke);
+}
+#page-pos .pay-method-btn:hover { border-color: var(--pg-ember); color: var(--pg-ember); }
+#page-pos .pay-method-btn.active {
+  background: rgba(255,106,46,0.15);
+  border-color: var(--pg-ember);
+  color: var(--pg-ember);
+  box-shadow: 0 2px 12px var(--pg-ember-glow);
+}
+
+#page-pos .cash-tendered-row {
+  background: var(--pg-char2);
+  border: 2px solid var(--pg-char3);
+}
+#page-pos .cash-tendered-row:focus-within { border-color: var(--pg-ember); }
+#page-pos .cash-label {
+  background: var(--pg-char3);
+  border-right: 1px solid var(--pg-char3);
+  color: var(--pg-smoke-dim);
+}
+#page-pos .cash-input { color: #f5ede0; }
+
+#page-pos .quick-cash-btn {
+  background: var(--pg-char2);
+  border: 1.5px solid var(--pg-char3);
+  color: var(--pg-smoke);
+}
+#page-pos .quick-cash-btn:hover { background: var(--pg-ember); border-color: var(--pg-ember); color: var(--pg-char); }
+
+#page-pos .change-display {
+  background: rgba(76,175,110,0.12);
+  border: 2px solid rgba(76,175,110,0.35);
+}
+#page-pos .change-label { color: var(--pg-smoke-dim); }
+#page-pos .change-amount { color: var(--pg-green); }
+#page-pos .change-display.insufficient { background: rgba(227,75,63,0.12); border-color: rgba(227,75,63,0.4); }
+#page-pos .change-display.insufficient .change-amount { color: var(--pg-red); }
+
+/* ---- Charge button — signature "sizzle" treatment ---- */
+#page-pos .btn-charge {
+  background: linear-gradient(135deg, var(--pg-ember) 0%, var(--pg-ember-dark) 100%);
+  font-family: 'Bangers', cursive;
+  letter-spacing: 3px;
+  box-shadow: 0 4px 0 var(--pg-ember-dark), 0 8px 20px rgba(255,106,46,0.4);
+  position: relative;
+  overflow: hidden;
+}
+#page-pos .btn-charge::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #ffd9bf, transparent);
+  opacity: 0.7;
+}
+#page-pos .btn-charge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--pg-ember-dark), 0 12px 26px rgba(255,106,46,0.5);
+}
+#page-pos .btn-charge:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--pg-ember-dark), 0 4px 12px rgba(255,106,46,0.3);
+}
+#page-pos .btn-charge:disabled {
+  background: var(--pg-smoke-dim);
+  box-shadow: none;
+}
+
+#page-pos .btn-clear-order {
+  background: transparent;
+  border: 1.5px solid var(--pg-char3);
+  color: var(--pg-smoke-dim);
+}
+#page-pos .btn-clear-order:hover { border-color: var(--pg-red); color: var(--pg-red); background: rgba(227,75,63,0.08); }
+
+/* ===================== MOBILE: keep paper-ticket panel on small screens ===================== */
+@media (max-width: 768px) {
+  #page-pos .order-panel.show-mobile { background: var(--pg-paper); }
+}
