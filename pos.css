@@ -597,15 +597,26 @@
     .page { display: none; }
     .page.active { display: block; padding: 24px 24px calc(24px + env(safe-area-inset-bottom, 0px)); }
 
-    /* POS page fills the content area so pos-layout height:100% works */
+    /* POS page fills the content area so pos-layout height:100% works.
+       We pull #page-pos up by --navbar-h (negative margin-top) so the
+       order panel's right column can start at the very top of the viewport
+       (behind the fixed navbar), matching the design wireframe.
+       The left column compensates with padding-top so its content still
+       starts below the navbar. */
     #page-pos {
       padding: 0;
       margin: 0;
+      margin-top: calc(-1 * var(--navbar-h));
     }
     #page-pos.active {
       display: flex;
       flex-direction: column;
-      height: 100%;
+      height: calc(100% + var(--navbar-h));
+    }
+
+    /* Left column: push content below the fixed navbar */
+    #page-pos .pos-left-col {
+      padding-top: var(--navbar-h);
     }
 
     /* Hide the default topbar when POS page is active */
@@ -1757,9 +1768,11 @@
 
       /* Portrait phones: single column, order panel as fullscreen overlay */
       .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; padding: 0; }
-      .pos-left-col { min-height: 0; overflow: visible; height: auto; }
+      .pos-left-col { min-height: 0; overflow: visible; height: auto; padding-top: 0; }
       .menu-panel { padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px)); min-height: 0; height: auto; }
-      #page-pos { height: auto; }
+      /* Reset desktop full-height trick — mobile uses single-column + overlay cart */
+      #page-pos { height: auto; margin-top: 0; }
+      #page-pos.active { height: auto; }
       /* On mobile, hide the pos topbar — nav is already in the top navbar */
       .topbar-pos { display: none !important; }
       .order-panel { display: none; }
@@ -1804,13 +1817,14 @@
       .nav-logo { width: 30px; height: 30px; font-size: 0.95rem; }
       .brand-name { font-size: 0.9rem; }
 
-      /* POS page fills the available height */
+      /* POS page fills the available height — reset desktop full-height trick */
       #page-pos, #page-pos.active {
         display: flex;
         flex-direction: column;
         height: 100%;
         overflow: hidden;
         padding: 0 !important;
+        margin-top: 0;
       }
 
       /* Single-column; bottom padding clears the floating cart button */
@@ -1825,6 +1839,7 @@
         flex-direction: column;
         height: 100%;
         overflow: hidden;
+        padding-top: 0;
       }
       .menu-panel {
         padding: 8px 10px calc(90px + env(safe-area-inset-bottom, 0px));
