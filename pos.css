@@ -1194,7 +1194,9 @@
       font-family: 'Nunito', sans-serif;
       transition: all 0.15s;
     }
-    @media (max-width: 900px) { .btn-back-menu { display: block; } }
+    @media (max-width: 900px), (max-width: 1024px) and (max-height: 500px) and (orientation: landscape) {
+      .btn-back-menu { display: block; }
+    }
 
     .btn-clear-order {
       width: 100%;
@@ -1731,14 +1733,21 @@
       .summary-cards { grid-template-columns: 1fr 1fr; }
     }
 
-    /* ----- Phone landscape (≤700px wide, landscape orientation):
-       Single-column layout, same FAB + fullscreen-overlay mechanic
-       as portrait. Tapping the floating cart button (🛒) brings the
-       order panel out fullscreen, which visually covers the FAB
-       (panel z-index 250 > FAB z-index 140) — so the FAB appears to
-       "hide" while the order panel is open, then reappears once the
-       "← Back" button closes it. No separate tab bar needed. ----- */
-    @media (max-width: 700px) and (orientation: landscape) {
+    /* ----- Phone landscape: single column, FAB + overlay cart -----
+       Detected by SHORT HEIGHT + landscape orientation, not by width.
+       A rotated phone's width becomes its old portrait height, which on
+       modern Android phones is usually 700-950px — well above any
+       "phone" width cutoff — so a width-only query here would almost
+       never match real devices (this is exactly the gap that let the
+       FAB sneak through and the previous tab-bar UI sit unreachable).
+       A phone's SHORT dimension stays short no matter how it's held —
+       virtually no phone has either dimension above ~480px, while even
+       the smallest tablets exceed 500px on both — so max-height is the
+       reliable signal. max-width is an extra sanity cap so a merely
+       short, very wide desktop browser window doesn't get treated as
+       a phone. This reuses the exact same FAB + overlay mechanic as
+       portrait — no separate tab-bar UI to keep in sync anymore. ----- */
+    @media (max-width: 1024px) and (max-height: 500px) and (orientation: landscape) {
 
       /* Collapse top navbar to minimum height */
       :root { --navbar-h: 44px; }
@@ -1757,13 +1766,12 @@
         padding: 0 !important;
       }
 
-      /* Single-column; bottom padding leaves room for the floating
-         cart button (FAB) so it doesn't overlap the last menu row */
+      /* Single-column; bottom padding clears the floating cart button */
       .pos-layout {
         grid-template-columns: 1fr;
         height: 100%;
         overflow: hidden;
-        padding: 8px 10px calc(80px + env(safe-area-inset-bottom, 0px));
+        padding: 8px 10px calc(90px + env(safe-area-inset-bottom, 0px));
       }
 
       /* Menu panel: full width, scrollable */
@@ -1779,7 +1787,7 @@
       .search-bar { margin-bottom: 8px; }
       .category-tabs { margin-bottom: 8px; }
 
-      /* Order panel: full-screen overlay (same mechanic as portrait) */
+      /* Order panel: full-screen overlay, same mechanic as portrait */
       .order-panel { display: none; }
       .order-panel.show-mobile {
         display: flex;
@@ -1843,7 +1851,7 @@
       font-family: 'Nunito', sans-serif;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 900px), (max-width: 1024px) and (max-height: 500px) and (orientation: landscape) {
       .float-cart-btn { display: flex; align-items: center; justify-content: center; }
     }
 
@@ -1895,12 +1903,18 @@
     }
 
     /* ========== NARROWER TABLET WIDTHS (701px-900px) ========== */
-    /* Width-only adjustment (applies in portrait or landscape) — shrinks
-       the order panel's width and the menu grid to fit narrower tablets.
-       The height-based block further down handles the case where the
-       screen is also short (i.e. actually in landscape), and overrides
-       the touch-target sizing in .order-header/.order-items/etc below. */
-    @media (min-width: 701px) and (max-width: 900px) {
+    /* Width adjustment for narrower tablets, in portrait or landscape —
+       shrinks the order panel's width and the menu grid to fit.
+       min-height: 501px excludes short landscape PHONES that happen to
+       land in this same width range (a rotated phone can be 701-900px
+       wide) — those are claimed by the dedicated phone-landscape block
+       above (max-height: 500px) instead, so the two-column layout here
+       never fights with that block's single-column override.
+       The height-based block further down handles the case where a
+       genuine tablet's screen is also short (real landscape tablets,
+       e.g. 1024×768), and overrides the touch-target sizing in
+       .order-header/.order-items/etc below. */
+    @media (min-width: 701px) and (max-width: 900px) and (min-height: 501px) {
       .pos-layout { grid-template-columns: 1fr clamp(300px, 45%, 420px); gap: 12px; padding: 12px 14px 14px; }
       .order-panel { width: clamp(300px, 45vw, 420px); }
       .menu-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
@@ -1921,8 +1935,10 @@
        internals for that case — not just smaller text everywhere. Padding
        and gaps shrink hard throughout, but the controls people actually
        tap repeatedly (quick-cash buttons, qty +/-, charge button) keep an
-       explicit min-height so they never become too small to hit reliably. */
-    @media (min-width: 701px) and (max-width: 1180px) and (max-height: 800px) {
+       explicit min-height so they never become too small to hit reliably.
+       min-height: 501px again excludes short landscape phones in this
+       width range, which use the FAB+overlay block instead. */
+    @media (min-width: 701px) and (max-width: 1180px) and (max-height: 800px) and (min-height: 501px) {
       .order-header { padding: 8px 14px; }
       .order-title { font-size: 1.05rem; }
 

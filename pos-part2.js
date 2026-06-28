@@ -232,9 +232,16 @@ function renderSummary() {
 }
 
 // =================== MOBILE CART ===================
+// Toggles the fullscreen cart overlay (used on phones in BOTH portrait and
+// landscape — there's no separate landscape tab-bar anymore). The FAB is
+// explicitly hidden while the cart is open (not just visually covered by
+// it) so its state is correct even on layouts/orientations where the
+// overlay might not cover the FAB's exact corner.
 function toggleMobileCart() {
   const panel = document.getElementById('orderPanel');
-  panel.classList.toggle('show-mobile');
+  const floatBtn = document.getElementById('floatCartBtn');
+  const isOpen = panel.classList.toggle('show-mobile');
+  if (floatBtn) floatBtn.classList.toggle('float-cart-hidden', isOpen);
 }
 
 // =================== MODALS ===================

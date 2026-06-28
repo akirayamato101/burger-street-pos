@@ -849,7 +849,7 @@
   </main>
 </div>
 
-<!-- Float Cart Btn (mobile portrait + landscape) -->
+<!-- Float Cart Btn (mobile, both portrait and landscape) -->
 <button class="float-cart-btn" id="floatCartBtn" onclick="toggleMobileCart()">
   🛒
   <span class="float-cart-count hidden" id="cartCount">0</span>
@@ -1120,10 +1120,12 @@
   }
 </script>
 
-<!-- ── Auto-close mobile/landscape order overlay on nav away ── -->
+<!-- ── Mobile cart overlay: auto-close on page navigation ── -->
 <script>
   /* When the user navigates away from the POS page, auto-close the
-     order overlay so it doesn't bleed into other pages. */
+     order overlay so it doesn't bleed into other pages. The FAB's own
+     visibility is handled separately (see floatCartBtn logic in
+     pos-part1.js), so we only need to reset the cart panel itself here. */
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.nav-item').forEach(item => {
       item.addEventListener('click', () => {
