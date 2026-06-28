@@ -284,10 +284,10 @@
       gap: 4px;
       border-right: none;
       border-bottom: 1px solid rgba(255,255,255,0.07);
-      z-index: 300;
+      z-index: 200;
       flex-shrink: 0;
       padding: 0 12px;
-      min-height: 60px;
+      min-height: 30px;
     }
 
     .sidebar-header {
