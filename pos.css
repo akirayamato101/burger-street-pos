@@ -593,6 +593,15 @@
 
     /* ========== PAGE CONTENT ========== */
     .page-content {
+      /* Flex item inside .main-content — must have flex:1 so its height is
+         a real pixel value. Without it, percentage heights on descendants
+         (e.g. #page-pos.active { height:100% }) resolve to "auto" (= 0)
+         on Android Chrome, collapsing .pos-layout → .menu-grid to zero
+         height and making the product grid invisible on phones/tablets.
+         Non-POS pages scroll inside this container via overflow-y:auto. */
+      display: flex;
+      flex-direction: column;
+      flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
       min-height: 0;
@@ -610,7 +619,12 @@
     #page-pos.active {
       display: flex;
       flex-direction: column;
-      height: 100%;
+      /* flex:1 fills the defined height of .page-content (which now has
+         flex:1 in .main-content). Using height:100% here was fragile —
+         it only works when the parent has an explicit pixel height, which
+         .page-content never had, causing the grid to collapse on Android. */
+      flex: 1;
+      min-height: 0;
     }
 
     /* Hide the default topbar when POS page is active */
@@ -1765,6 +1779,10 @@
       .pos-left-col { min-height: 0; overflow: visible; height: auto; }
       .menu-panel { padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px)); min-height: 0; height: auto; }
       #page-pos { height: auto; }
+      /* Undo the base flex:1 so portrait phone keeps natural-scroll layout.
+         flex:none + height:auto lets the pos-layout grow to its content
+         height and the page scrolls inside .page-content's overflow-y:auto. */
+      #page-pos.active { flex: none; height: auto; min-height: 0; }
       /* On mobile, hide the pos topbar — nav is already in the top navbar */
       .topbar-pos { display: none !important; }
       .order-panel { display: none; }
