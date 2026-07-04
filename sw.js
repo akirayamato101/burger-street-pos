@@ -3,7 +3,7 @@
    Caches all app files for offline use
    ============================================= */
 
-const CACHE_NAME = 'burger-pos-v12';
+const CACHE_NAME = 'burger-pos-v13';
 
 // IMPORTANT: paths are RELATIVE (no leading "/"). This app is hosted on
 // GitHub Pages as a PROJECT site (https://<user>.github.io/burger-street-pos/),
