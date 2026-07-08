@@ -156,11 +156,23 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <div class="cashier-display">
-        <span class="cashier-label">👤 Cashier</span>
-        <span class="cashier-name" id="cashierName">Cashier</span>
+      <div class="cashier-dropdown" id="cashierDropdown">
+        <button class="cashier-dropdown-trigger" id="cashierDropdownBtn" onclick="toggleCashierDropdown(event)" aria-expanded="false" aria-haspopup="true">
+          <span class="cashier-avatar">👤</span>
+          <span class="cashier-name" id="cashierName">Cashier</span>
+          <span class="cashier-caret" id="cashierCaret">▾</span>
+        </button>
+        <div class="cashier-dropdown-menu" id="cashierDropdownMenu" role="menu">
+          <div class="cashier-dropdown-info">
+            <span class="cdrop-label">Signed in as</span>
+            <span class="cdrop-name" id="cashierDropName">Cashier</span>
+          </div>
+          <div class="cashier-dropdown-divider"></div>
+          <button class="cashier-dropdown-item danger" onclick="logOut(); closeCashierDropdown()" role="menuitem">
+            🔒 Lock Terminal
+          </button>
+        </div>
       </div>
-      <button class="btn-logout" onclick="logOut()">🔒 Lock Terminal</button>
     </div>
   </nav>
 
@@ -169,8 +181,8 @@
 
   <!-- MAIN CONTENT -->
   <main class="main-content">
-    <!-- TOP BAR -->
-    <header class="topbar">
+    <!-- TOP BAR (non-POS pages) -->
+    <header class="topbar topbar-default">
       <button class="menu-btn" onclick="toggleSidebar()">☰</button>
       <h2 class="page-title" id="pageTitle">New Order</h2>
       <div style="display:flex;align-items:center;gap:12px;">
@@ -185,6 +197,35 @@
       <!-- ===== POS PAGE ===== -->
       <section id="page-pos" class="page active">
         <div class="pos-layout">
+
+          <!-- LEFT: Navbar + Menu column -->
+          <div class="pos-left-col">
+            <!-- POS topbar: only above the menu panel -->
+            <header class="topbar topbar-pos">
+              <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+              <h2 class="page-title">New Order</h2>
+              <div class="topbar-pos-right">
+                <span class="date-display" id="currentDatePos"></span>
+                <span id="topbarOrderNumPos" style="font-size:0.78rem;color:var(--text3);font-weight:600"></span>
+                <div class="cashier-dropdown" id="cashierDropdownPos">
+                  <button class="cashier-dropdown-trigger" id="cashierDropdownBtnPos" onclick="toggleCashierDropdown(event)" aria-expanded="false" aria-haspopup="true">
+                    <span class="cashier-avatar">👤</span>
+                    <span class="cashier-name" id="cashierNamePos">Cashier</span>
+                    <span class="cashier-caret" id="cashierCaretPos">▾</span>
+                  </button>
+                  <div class="cashier-dropdown-menu" id="cashierDropdownMenuPos" role="menu">
+                    <div class="cashier-dropdown-info">
+                      <span class="cdrop-label">Signed in as</span>
+                      <span class="cdrop-name" id="cashierDropNamePos">Cashier</span>
+                    </div>
+                    <div class="cashier-dropdown-divider"></div>
+                    <button class="cashier-dropdown-item danger" onclick="logOut(); closeCashierDropdown()" role="menuitem">
+                      🔒 Lock Terminal
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </header>
 
           <!-- LEFT: Menu -->
           <div class="menu-panel">
@@ -201,6 +242,7 @@
               </div>
             </div>
           </div>
+          </div><!-- end pos-left-col -->
 
           <!-- RIGHT: Order Panel -->
           <div class="order-panel" id="orderPanel">
@@ -837,7 +879,7 @@
   </main>
 </div>
 
-<!-- Float Cart Btn (mobile) -->
+<!-- Float Cart Btn (mobile, both portrait and landscape) -->
 <button class="float-cart-btn" id="floatCartBtn" onclick="toggleMobileCart()">
   🛒
   <span class="float-cart-count hidden" id="cartCount">0</span>
@@ -1085,9 +1127,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
-<script src="pos-part1.js?v=1"></script>
-<script src="pos-part2.js?v=2"></script>
-<script src="pos-part3.js?v=2"></script>
+<!-- Firebase: cloud database + real-time sync across cashier devices -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js?v=1"></script>
+<script src="js/cloud-storage.js?v=1"></script>
+
+<script src="pos-part1.js?v=2"></script>
+<script src="pos-part2.js?v=3"></script>
+<script src="pos-part3.js?v=3"></script>
 <script src="pos-part4.js?v=1"></script>
 
 
@@ -1099,6 +1148,94 @@
         .catch(err => console.warn('SW registration failed:', err));
     });
   }
+</script>
+
+<!-- ── Mobile cart overlay: auto-close on page navigation ── -->
+<script>
+  /* When the user navigates away from the POS page, auto-close the
+     order overlay so it doesn't bleed into other pages. The FAB's own
+     visibility is handled separately (see floatCartBtn logic in
+     pos-part1.js), so we only need to reset the cart panel itself here. */
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const orderPanel = document.getElementById('orderPanel');
+        if (orderPanel) orderPanel.classList.remove('show-mobile');
+      });
+    });
+  });
+
+  /* ── Cashier Dropdown ── */
+  function toggleCashierDropdown(e) {
+    e.stopPropagation();
+    const menu = document.getElementById('cashierDropdownMenu');
+    const btn  = document.getElementById('cashierDropdownBtn');
+    const caret = document.getElementById('cashierCaret');
+    const isOpen = menu.classList.toggle('open');
+    btn.setAttribute('aria-expanded', isOpen);
+    caret.textContent = isOpen ? '▴' : '▾';
+  }
+
+  function closeCashierDropdown() {
+    const menu  = document.getElementById('cashierDropdownMenu');
+    const btn   = document.getElementById('cashierDropdownBtn');
+    const caret = document.getElementById('cashierCaret');
+    if (!menu) return;
+    menu.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    caret.textContent = '▾';
+  }
+
+  /* Close the dropdown when clicking anywhere outside it */
+  document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('cashierDropdown');
+    if (dropdown && !dropdown.contains(e.target)) closeCashierDropdown();
+  });
+
+  /* Keep cashierDropName in sync with cashierName (set by POS JS) */
+  document.addEventListener('DOMContentLoaded', () => {
+    const nameEl = document.getElementById('cashierName');
+    const dropEl = document.getElementById('cashierDropName');
+    if (!nameEl || !dropEl) return;
+    const obs = new MutationObserver(() => {
+      dropEl.textContent = nameEl.textContent;
+      // Also sync the POS topbar dropdown
+      const namePosEl = document.getElementById('cashierNamePos');
+      const dropPosEl = document.getElementById('cashierDropNamePos');
+      if (namePosEl) namePosEl.textContent = nameEl.textContent;
+      if (dropPosEl) dropPosEl.textContent = nameEl.textContent;
+    });
+    obs.observe(nameEl, { childList: true, characterData: true, subtree: true });
+  });
+
+  /* Also close POS topbar dropdown when clicking outside */
+  document.addEventListener('click', function(e) {
+    const dropdownPos = document.getElementById('cashierDropdownPos');
+    if (dropdownPos && !dropdownPos.contains(e.target)) {
+      const menu = document.getElementById('cashierDropdownMenuPos');
+      const btn = document.getElementById('cashierDropdownBtnPos');
+      const caret = document.getElementById('cashierCaretPos');
+      if (menu) menu.classList.remove('open');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      if (caret) caret.style.transform = '';
+    }
+  });
+
+  /* Sync date display to POS topbar */
+  document.addEventListener('DOMContentLoaded', () => {
+    const dateEl = document.getElementById('currentDate');
+    const datePosEl = document.getElementById('currentDatePos');
+    if (dateEl && datePosEl) {
+      const obs = new MutationObserver(() => { datePosEl.textContent = dateEl.textContent; });
+      obs.observe(dateEl, { childList: true, characterData: true, subtree: true });
+    }
+    const orderNumEl = document.getElementById('topbarOrderNum');
+    const orderNumPosEl = document.getElementById('topbarOrderNumPos');
+    if (orderNumEl && orderNumPosEl) {
+      const obs2 = new MutationObserver(() => { orderNumPosEl.textContent = orderNumEl.textContent; });
+      obs2.observe(orderNumEl, { childList: true, characterData: true, subtree: true });
+    }
+  });
 </script>
 </body>
 </html>
