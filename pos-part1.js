@@ -32,10 +32,10 @@ function getLocalDateKey(d = new Date()) {
 let activeCashier = null; // { id, name, pin }
 
 function getCashiers() {
-  try { return JSON.parse(localStorage.getItem(CASHIERS_KEY)) || []; } catch(e) { return []; }
+  try { return JSON.parse(cloudStorage.getItem(CASHIERS_KEY)) || []; } catch(e) { return []; }
 }
 function saveCashiers(list) {
-  try { localStorage.setItem(CASHIERS_KEY, JSON.stringify(list)); } catch(e) {}
+  try { cloudStorage.setItem(CASHIERS_KEY, JSON.stringify(list)); } catch(e) {}
 }
 
 function getCashierStorageKey(cashierId) {
@@ -48,12 +48,12 @@ function getCashierInvKey(cashierId) {
 // Global data (products, owner settings) shared across all cashiers
 function loadGlobalState() {
   try {
-    const s = localStorage.getItem(OWNER_GLOBAL_KEY);
+    const s = cloudStorage.getItem(OWNER_GLOBAL_KEY);
     return s ? JSON.parse(s) : {};
   } catch(e) { return {}; }
 }
 function saveGlobalState(data) {
-  try { localStorage.setItem(OWNER_GLOBAL_KEY, JSON.stringify(data)); } catch(e) {}
+  try { cloudStorage.setItem(OWNER_GLOBAL_KEY, JSON.stringify(data)); } catch(e) {}
 }
 
 // =================== STATE ===================
@@ -72,7 +72,7 @@ let activePage = 'pos';
 // =================== STORAGE ===================
 function savePos() {
   if (!activeCashier) return;
-  try { localStorage.setItem(getCashierStorageKey(activeCashier.id), JSON.stringify(posState)); } catch(e) {}
+  try { cloudStorage.setItem(getCashierStorageKey(activeCashier.id), JSON.stringify(posState)); } catch(e) {}
   // Also save products globally so all cashiers share the menu
   const global = loadGlobalState();
   global.customProducts = posState.customProducts;
@@ -83,7 +83,7 @@ function savePos() {
 function loadPos() {
   if (!activeCashier) return;
   try {
-    const s = localStorage.getItem(getCashierStorageKey(activeCashier.id));
+    const s = cloudStorage.getItem(getCashierStorageKey(activeCashier.id));
     if (s) posState = { ...posState, ...JSON.parse(s) };
     // Load shared products from global store
     const global = loadGlobalState();
@@ -140,18 +140,36 @@ document.addEventListener('DOMContentLoaded', () => {
   if (inventoryDate) inventoryDate.value = getLocalDateKey();
   if (ownerSummaryDate) ownerSummaryDate.value = today;
 
-  // Restore session if available, otherwise show cashier login
-  try {
-    const saved = localStorage.getItem('burgStreet_activeSession');
-    if (saved) {
-      const session = JSON.parse(saved);
-      activeCashier = session;
-      loadPos();
-      unlockApp();
-      return;
-    }
-  } catch(e) {}
-  showCashierLogin();
+  // Wait for the first batch of data to arrive from Firebase before showing
+  // anything that depends on cloud data (cashier list, products, etc). Without
+  // this, the app would briefly render with an EMPTY cache on every fresh
+  // load, then "snap" to the real data a moment later once Firestore replies.
+  const startApp = () => {
+    // Restore session if available, otherwise show cashier login
+    try {
+      const saved = localStorage.getItem('burgStreet_activeSession');
+      if (saved) {
+        const session = JSON.parse(saved);
+        activeCashier = session;
+        loadPos();
+        unlockApp();
+        return;
+      }
+    } catch(e) {}
+    showCashierLogin();
+  };
+
+  if (typeof cloudStorage !== 'undefined') {
+    cloudShowConnecting();
+    cloudStorage.onReady(() => {
+      cloudHideConnecting();
+      startApp();
+    });
+  } else {
+    // Firebase scripts didn't load (e.g. offline on first-ever visit) — fall
+    // back to running on whatever is in the local cache so the app isn't dead.
+    startApp();
+  }
 });
 
 function updateDate() {
@@ -463,6 +481,7 @@ function unlockApp() {
   refreshSettingsPage();
   renderDeliveryLog();
   renderCashAdvanceLog();
+  renderExpenseLog();
 }
 
 function logOut() {
@@ -502,7 +521,7 @@ function showPage(page) {
   if (page === 'summary') renderSummary();
   if (page === 'products') refreshProductList();
   if (page === 'settings') refreshSettingsPage();
-  if (page === 'inventory') { currentShiftIndex = -1; renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); }
+  if (page === 'inventory') { currentShiftIndex = -1; renderInventory(); renderDeliveryLog(); renderCashAdvanceLog(); renderExpenseLog(); }
   if (page === 'debugdata') { renderDebugData(); }
 }
 
@@ -1028,7 +1047,18 @@ function adjustIngredientsForOrderEdit(originalItems, newItems) {
     const delta = {};
     const addNeeded = (items, sign) => {
       items.forEach(item => {
-        const product = (posState.customProducts || []).find(p => p.id == item.id);
+        // BUGFIX: look up the product the SAME way the menu grid and stock
+        // validation do (allProducts — see validateCartAgainstStock), not
+        // just posState.customProducts. getInventoryProducts() merges in
+        // products from an older, separate inventory store (INV_KEY) that
+        // are sellable from the menu and pass stock validation, but were
+        // invisible here — so selling them silently deducted nothing,
+        // even though the sale itself went through fine. Fall back to
+        // posState.customProducts only if allProducts isn't populated yet.
+        const product = (typeof allProducts !== 'undefined' && allProducts.length
+          ? allProducts
+          : (posState.customProducts || [])
+        ).find(p => p.id == item.id);
         if (!product || !product.recipe || !product.recipe.length) return;
         product.recipe.forEach(r => {
           const key = (r.ingredient || '').trim().toLowerCase();
@@ -1080,7 +1110,17 @@ function autoDeductIngredients(soldItems) {
 
     let changed = false;
     soldItems.forEach(item => {
-      const product = (posState.customProducts || []).find(p => p.id == item.id);
+      // BUGFIX: same as adjustIngredientsForOrderEdit above — use allProducts
+      // (the merged list the menu grid actually sells from) so any product
+      // that came from the legacy INV_KEY merge in getInventoryProducts()
+      // is found here too. Previously this only checked
+      // posState.customProducts, so a sale of a merged-in product passed
+      // stock validation and completed normally, but deducted ZERO
+      // ingredients — looking exactly like "the sale wasn't recorded".
+      const product = (typeof allProducts !== 'undefined' && allProducts.length
+        ? allProducts
+        : (posState.customProducts || [])
+      ).find(p => p.id == item.id);
       if (!product || !product.recipe || !product.recipe.length) return;
       product.recipe.forEach(recipeItem => {
         const totalDeduct = recipeItem.qty * item.qty;

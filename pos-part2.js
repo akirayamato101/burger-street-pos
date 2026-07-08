@@ -232,9 +232,16 @@ function renderSummary() {
 }
 
 // =================== MOBILE CART ===================
+// Toggles the fullscreen cart overlay (used on phones in BOTH portrait and
+// landscape — there's no separate landscape tab-bar anymore). The FAB is
+// explicitly hidden while the cart is open (not just visually covered by
+// it) so its state is correct even on layouts/orientations where the
+// overlay might not cover the FAB's exact corner.
 function toggleMobileCart() {
   const panel = document.getElementById('orderPanel');
-  panel.classList.toggle('show-mobile');
+  const floatBtn = document.getElementById('floatCartBtn');
+  const isOpen = panel.classList.toggle('show-mobile');
+  if (floatBtn) floatBtn.classList.toggle('float-cart-hidden', isOpen);
 }
 
 // =================== MODALS ===================
@@ -283,21 +290,21 @@ const GLOBAL_ALERT_KEY   = 'burgerStreetGlobalAlertThreshold';
 
 function loadPriorityThresholds() {
   try {
-    const s = localStorage.getItem(PRIORITY_STOCK_KEY);
+    const s = cloudStorage.getItem(PRIORITY_STOCK_KEY);
     if (s) return JSON.parse(s);
   } catch (e) {}
   return {};
 }
 
 function savePriorityThresholds(map) {
-  try { localStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(map)); } catch (e) {}
+  try { cloudStorage.setItem(PRIORITY_STOCK_KEY, JSON.stringify(map)); } catch (e) {}
 }
 
 // Global alert threshold — single value that applies to ALL ingredients
 // unless overridden by a per-ingredient threshold.
 function loadGlobalAlertThreshold() {
   try {
-    const v = localStorage.getItem(GLOBAL_ALERT_KEY);
+    const v = cloudStorage.getItem(GLOBAL_ALERT_KEY);
     if (v !== null && v !== '') return Number(v);
   } catch (e) {}
   return null; // null = not set
@@ -306,9 +313,9 @@ function loadGlobalAlertThreshold() {
 function saveGlobalAlertThreshold(val) {
   try {
     if (val === null || val === '') {
-      localStorage.removeItem(GLOBAL_ALERT_KEY);
+      cloudStorage.removeItem(GLOBAL_ALERT_KEY);
     } else {
-      localStorage.setItem(GLOBAL_ALERT_KEY, String(Math.max(1, Number(val))));
+      cloudStorage.setItem(GLOBAL_ALERT_KEY, String(Math.max(1, Number(val))));
     }
   } catch (e) {}
 }
@@ -595,6 +602,11 @@ function autoFillDeliveryQty() {
   }
 }
 
+function markDeliveryQtyManual() {
+  const display = document.getElementById('deliveryQty');
+  if (display) display._manuallyEdited = display.value !== '';
+}
+
 function setDeliveryType(type) {
   document.getElementById('deliveryType').value = type;
 
@@ -653,6 +665,8 @@ function openDeliveryModal(type = 'delivery') {
   document.getElementById('deliveryDateTime').value = local;
   document.getElementById('deliveryItem').value = '';
   document.getElementById('deliveryQty').value = '';
+  const dQty = document.getElementById('deliveryQty');
+  if (dQty) dQty._manuallyEdited = false;
   document.getElementById('deliveryQtyNum').value = '';
   document.getElementById('deliveryUnit').value = 'pcs';
   document.getElementById('deliverySupplier').value = '';
@@ -697,9 +711,14 @@ function saveDelivery() {
   const qtyNum = parseFloat(document.getElementById('deliveryQtyNum').value) || 0;
 
   if (!item) { showToast('Please enter an item name.', 'error'); return; }
-  if (!qty) { showToast('Please enter a quantity.', 'error'); return; }
+  // If the display-qty field is empty (e.g. browser autofill bypassed oninput),
+  // fall back to the numeric qty + unit so the save is never silently blocked.
+  const resolvedQty = qty || (qtyNum > 0 ? `${qtyNum} ${unit}` : '');
+  if (!resolvedQty) { showToast('Please enter a quantity.', 'error'); return; }
+  // Keep qty in sync so the movement record always has a display string.
+  if (!qty && resolvedQty) document.getElementById('deliveryQty').value = resolvedQty;
 
-  const dateKey = getTodayInvKey();
+  const dateKey = getLocalDateKey(); // FIXED: always use real today, not the date picker value
   const invData = loadInventoryData();
 
   // For pull-outs, check current stock so the cashier can't silently push an
@@ -717,9 +736,13 @@ function saveDelivery() {
     const activeShift = invData[dateKey].shifts[activeShiftIdx];
     const ings = activeShift.opening?.ingredients || [];
     const existing = ings.find(i => i.name.trim().toLowerCase() === item.toLowerCase());
-    const currentQty = existing ? (existing.qty || 0) : 0;
+    // Use actual remaining stock (opening qty minus sales already made today),
+    // not raw opening qty — otherwise the warning shows the wrong number when
+    // sales have already happened (e.g. opened 80, sold 48, remaining 32, but
+    // warning used to say "Only 80 in stock" instead of the correct "Only 32").
+    const currentQty = existing ? Math.max(0, (existing.qty || 0) - (existing.usedQty || 0)) : 0;
     if (qtyNum > currentQty) {
-      const proceed = confirm(`⚠️ Only ${currentQty} ${unit} of "${item}" is currently in stock, but you're pulling out ${qtyNum}. Continue anyway? (Stock will be set to 0.)`);
+      const proceed = confirm(`⚠️ Only ${currentQty} ${unit} of "${item}" is currently on the shelf, but you're pulling out ${qtyNum}. Continue anyway? (Stock will be set to 0.)`);
       if (!proceed) return;
     }
   }
@@ -728,7 +751,7 @@ function saveDelivery() {
     id: Date.now(),
     type, // 'delivery' (stock in) or 'pullout' (stock out)
     item,
-    qty,
+    qty: resolvedQty,
     qtyNum,
     unit,
     supplier: type === 'delivery' ? (supplier || '—') : '—',
@@ -765,6 +788,16 @@ function saveDelivery() {
     // Apply to the active (last) shift's opening ingredients
     const activeShiftIdx = invData[dateKey].shifts.length - 1;
     const activeShift = invData[dateKey].shifts[activeShiftIdx];
+
+    // Record whether this shift was ALREADY closed at the moment this
+    // movement was saved. The report (renderInventory in pos-part3.js) uses
+    // this flag — not just "does this shift have a closing right now" — to
+    // decide whether to net the movement out of "Used": a delivery/pull-out
+    // logged before closing is already reflected in the cashier's manual
+    // closing/actual count, so netting it again would double-count it.
+    const cl = activeShift.closing;
+    movement.postClosing = !!(cl && ((cl.ingredients && cl.ingredients.length) || (cl.amounts && cl.amounts.length)));
+
     if (!activeShift.opening) activeShift.opening = { ingredients: [], amounts: [] };
     if (!activeShift.opening.ingredients) activeShift.opening.ingredients = [];
     const ings = activeShift.opening.ingredients;
@@ -779,7 +812,59 @@ function saveDelivery() {
     }
     // (A pull-out on an item with no existing stock record is logged but has
     // nothing to subtract from — the warning above already covered this case.)
+
+    // FIX: Whenever a closing exists, sync closing.closingQty with the same
+    // delta so tomorrow's opening seeds from the correct number.
+    // seedOpeningFromLastClosing reads closingQty (not opening.qty), so without
+    // this sync any pull-out or delivery is invisible to the next day's seeding
+    // regardless of whether the closing was saved before or after this movement.
+    if (activeShift.closing && activeShift.closing.ingredients) {
+      const closingIng = activeShift.closing.ingredients.find(
+        i => i.name.trim().toLowerCase() === item.toLowerCase()
+      );
+      if (closingIng) {
+        closingIng.closingQty = Math.max(0, (closingIng.closingQty ?? 0) + delta);
+        if (closingIng.actualQty !== null && closingIng.actualQty !== undefined && closingIng.actualQty !== '') {
+          closingIng.actualQty = Math.max(0, (parseInt(closingIng.actualQty, 10) || 0) + delta);
+        }
+      } else if (type === 'delivery') {
+        activeShift.closing.ingredients.push({ name: item, unit: unit, closingQty: qtyNum, actualQty: null });
+      }
+    }
+
     saveInventoryData(invData);
+
+    // FIX: If a future date was already auto-seeded before this pull-out/delivery
+    // happened, its opening is now stale. Delete it so it re-seeds fresh on next
+    // view and picks up the corrected qty.
+    // CHAIN FIX: use a set of "dirty" source dates so that if Day C was seeded
+    // from Day B which was seeded from today (Day A), Day C is also invalidated
+    // even though its seededFrom is "Day B", not "Day A". The previous `break`
+    // caused the loop to stop at Day B and leave Day C with stale data.
+    const futureDates = Object.keys(invData).filter(d => d > dateKey).sort();
+    let invChanged = false;
+    const invalidatedDates = new Set([dateKey]);
+    for (const futureDate of futureDates) {
+      const futureShifts = invData[futureDate] && invData[futureDate].shifts;
+      if (!futureShifts || !futureShifts.length) continue;
+      const firstShift = futureShifts[0];
+      if (!firstShift.opening) continue;
+      const sf = firstShift.opening.seededFrom;
+      // Invalidate if seeded from today or from any already-invalidated date,
+      // OR if it was a same-day "previous shift" seed (which is always stale
+      // when the source shift's opening changed).
+      if (sf === 'previous shift' || invalidatedDates.has(sf)) {
+        delete firstShift.opening;
+        if (!firstShift.closing) {
+          futureShifts.splice(0, 1);
+          if (!futureShifts.length) delete invData[futureDate];
+        }
+        invChanged = true;
+        invalidatedDates.add(futureDate); // mark so dates seeded from this are also caught
+      }
+      // No break — must scan ALL future dates to catch chains like A→B→C→D
+    }
+    if (invChanged) saveInventoryData(invData);
 
     // Record exactly where this movement landed so the report can pull it
     // back out of "Used" later, even if this shift has since closed.
@@ -937,7 +1022,7 @@ function exportAllData() {
     const perCashierData = {};
     cashiers.forEach(c => {
       const key = getCashierStorageKey(c.id);
-      const s = localStorage.getItem(key);
+      const s = cloudStorage.getItem(key);
       if (s) perCashierData[key] = JSON.parse(s);
     });
 
@@ -987,7 +1072,7 @@ function exportAllData() {
       const perCashierData = {};
       cashiers.forEach(c => {
         const key = getCashierStorageKey(c.id);
-        const s = localStorage.getItem(key);
+        const s = cloudStorage.getItem(key);
         if (s) perCashierData[key] = JSON.parse(s);
       });
       const backup = {
@@ -1036,7 +1121,7 @@ function importAllData(file) {
         if (backup.globalState) saveGlobalState(backup.globalState);
         if (backup.perCashierData) {
           Object.entries(backup.perCashierData).forEach(([key, val]) => {
-            try { localStorage.setItem(key, JSON.stringify(val)); } catch (err) {}
+            try { cloudStorage.setItem(key, JSON.stringify(val)); } catch (err) {}
           });
         }
         if (backup.inventory) saveInventoryData(backup.inventory);
@@ -1097,12 +1182,12 @@ function confirmClearSelectedData() {
       cashiers.forEach(c => {
         try {
           const key = getCashierStorageKey(c.id);
-          const s = localStorage.getItem(key);
+          const s = cloudStorage.getItem(key);
           if (s) {
             const parsed = JSON.parse(s);
             parsed.orders = [];
             parsed.orderCounter = 1;
-            localStorage.setItem(key, JSON.stringify(parsed));
+            cloudStorage.setItem(key, JSON.stringify(parsed));
           }
         } catch (e) {}
       });
@@ -1119,11 +1204,11 @@ function confirmClearSelectedData() {
       cashiers.forEach(c => {
         try {
           const key = getCashierStorageKey(c.id);
-          const s = localStorage.getItem(key);
+          const s = cloudStorage.getItem(key);
           if (s) {
             const parsed = JSON.parse(s);
             parsed.customProducts = [];
-            localStorage.setItem(key, JSON.stringify(parsed));
+            cloudStorage.setItem(key, JSON.stringify(parsed));
           }
         } catch (e) {}
       });
@@ -1131,17 +1216,17 @@ function confirmClearSelectedData() {
     }
 
     if (wantInventory) {
-      try { localStorage.removeItem(INV_STORE_KEY); } catch (e) {}
-      try { localStorage.removeItem(SHARED_DELIVERY_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(INV_STORE_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(SHARED_DELIVERY_KEY); } catch (e) {}
       // Cash advance log lives inside each cashier's own posState.
       cashiers.forEach(c => {
         try {
           const key = getCashierStorageKey(c.id);
-          const s = localStorage.getItem(key);
+          const s = cloudStorage.getItem(key);
           if (s) {
             const parsed = JSON.parse(s);
             parsed.cashAdvances = [];
-            localStorage.setItem(key, JSON.stringify(parsed));
+            cloudStorage.setItem(key, JSON.stringify(parsed));
           }
         } catch (e) {}
       });
@@ -1149,12 +1234,12 @@ function confirmClearSelectedData() {
     }
 
     if (wantIngList) {
-      try { localStorage.removeItem(INGREDIENT_TEMPLATE_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(INGREDIENT_TEMPLATE_KEY); } catch (e) {}
     }
 
     if (wantCashiers) {
-      try { localStorage.removeItem(CASHIERS_KEY); } catch (e) {}
-      try { localStorage.removeItem(OWNER_GLOBAL_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(CASHIERS_KEY); } catch (e) {}
+      try { cloudStorage.removeItem(OWNER_GLOBAL_KEY); } catch (e) {}
       try { localStorage.removeItem('burgStreet_activeSession'); } catch (e) {}
       // Settings (including ownerPin) live in OWNER_GLOBAL_KEY (cleared above)
       // and in posState — reset posState's copy too.
