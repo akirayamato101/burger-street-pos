@@ -716,8 +716,19 @@ function openInvModal(type) {
   const data = loadInventoryData();
   const activeShift = getActiveShift(dateKey, data) || {};
 
-  document.getElementById('invModalTitle').textContent =
-    type === 'opening' ? '🌅 Set Opening Inventory' : '🌙 Set Closing Inventory';
+  // Make it obvious when this modal is editing a date other than today —
+  // the closing flow above already blocks that outright, but opening edits
+  // to past dates are intentionally still allowed (e.g. correcting a
+  // historical record), so instead of blocking, just make sure the cashier
+  // can see it. Without this, nothing in the modal itself said which date
+  // was being edited, so a cashier viewing a non-today date (whether from
+  // Prev/Next shift, or the app simply having been left open since a
+  // previous day) had no way to notice they weren't editing today's opening.
+  const isPastDate = dateKey !== getLocalDateKey();
+  const baseTitle = type === 'opening' ? '🌅 Set Opening Inventory' : '🌙 Set Closing Inventory';
+  document.getElementById('invModalTitle').innerHTML = isPastDate
+    ? `${baseTitle} <span style="color:var(--red);font-size:0.75rem;font-weight:700;">— editing ${escHtml(new Date(dateKey + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }))}, not today</span>`
+    : baseTitle;
 
   if (type === 'opening') {
     const op = activeShift.opening || {};

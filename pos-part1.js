@@ -27,6 +27,11 @@ function getLocalDateKey(d = new Date()) {
   return new Date(d.getTime() - tzOffsetMs).toISOString().split('T')[0];
 }
 
+// Tracks the date getLocalDateKey() returned the last time we checked it.
+// Used by checkDateRollover() (called once a minute — see updateDate()) to
+// notice when a new calendar day has started while the app is still open.
+let lastKnownDateKey = getLocalDateKey();
+
 
 // =================== CASHIER/SHIFT STATE ===================
 let activeCashier = null; // { id, name, pin }
@@ -130,14 +135,20 @@ document.addEventListener('DOMContentLoaded', () => {
   updateDate();
   setInterval(updateDate, 60000);
 
-  const today = new Date().toISOString().split('T')[0];
+  // FIX: was new Date().toISOString().split('T')[0] — that's the UTC date,
+  // not the local one. In Manila (UTC+8), anything before 8:00 AM local time
+  // rolled these three fields back to "yesterday" even though getLocalDateKey()
+  // (used everywhere else, including inventory) correctly said "today" —
+  // Order History / My Summary / Owner Summary would silently default to
+  // the wrong day for the first 8 hours of every morning.
+  const today = getLocalDateKey();
   const filterDate = document.getElementById('filterDate');
   const summaryDate = document.getElementById('summaryDate');
   const inventoryDate = document.getElementById('inventoryDate');
   const ownerSummaryDate = document.getElementById('ownerSummaryDate');
   if (filterDate) filterDate.value = today;
   if (summaryDate) summaryDate.value = today;
-  if (inventoryDate) inventoryDate.value = getLocalDateKey();
+  if (inventoryDate) inventoryDate.value = today;
   if (ownerSummaryDate) ownerSummaryDate.value = today;
 
   // Wait for the first batch of data to arrive from Firebase before showing
@@ -177,6 +188,64 @@ function updateDate() {
   if (el) el.textContent = new Date().toLocaleDateString('en-PH', {
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
   });
+  checkDateRollover();
+}
+
+// THE ACTUAL BUG: inventoryDate (and filterDate/summaryDate/ownerSummaryDate)
+// only ever got set to "today" ONCE, at DOMContentLoaded. This is a PWA meant
+// to be left open on a shop tablet for days at a stretch — nothing about
+// normal use ever reloads the page, including switching to the Daily
+// Inventory tab (showPage() just re-renders, it never resets the date input).
+// So once the app is left running past midnight, that date field is frozen
+// on the PREVIOUS day forever, while autoDeductIngredients()/getLocalDateKey()
+// (used for every actual stock write) correctly moved on to the new day.
+// Result: sales keep deducting correctly from the real "today" record, but
+// the Daily Inventory page — and the "Set Opening Inventory" editor opened
+// from it — keeps showing/editing the stale old day, which nobody is
+// actually selling against anymore. That looks exactly like "auto-deduct
+// stopped working," and any ingredient added while editing what looks like
+// "today's" opening silently gets saved onto that old day instead, so it
+// never shows up where the cashier expects it.
+//
+// Fix: once a minute (piggybacking on the existing updateDate interval),
+// check whether the real calendar date has moved on. If a date field is
+// still showing the date we last knew as "today," roll it forward and
+// re-render. If the cashier had deliberately navigated a field to some
+// other date to review a past record, we leave it alone — we only touch
+// fields that still match our last-known "today," never any other date.
+function checkDateRollover() {
+  const realToday = getLocalDateKey();
+  if (realToday === lastKnownDateKey) return;
+  const staleToday = lastKnownDateKey;
+  lastKnownDateKey = realToday;
+
+  const fields = [
+    { id: 'inventoryDate', onChanged: () => {
+        currentShiftIndex = -1;
+        if (activePage === 'inventory') renderInventory();
+      } },
+    { id: 'filterDate', onChanged: () => {
+        if (activePage === 'orders') renderOrderHistory();
+      } },
+    { id: 'summaryDate', onChanged: () => {
+        if (activePage === 'summary') renderSummary();
+      } },
+    { id: 'ownerSummaryDate', onChanged: () => {
+        if (typeof renderOwnerSummary === 'function') renderOwnerSummary();
+      } }
+  ];
+  fields.forEach(({ id, onChanged }) => {
+    const el = document.getElementById(id);
+    if (el && el.value === staleToday) {
+      el.value = realToday;
+      onChanged();
+    }
+  });
+
+  // Ingredient stock limits on the New Order page key off getLocalDateKey()
+  // directly rather than one of the date inputs above, but the menu grid
+  // still needs a repaint now that a new day's opening inventory is active.
+  if (activePage === 'pos') renderMenuGrid();
 }
 
 // =================== CASHIER LOGIN SYSTEM ===================
