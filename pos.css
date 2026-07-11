@@ -67,16 +67,6 @@
       --sidebar-bg: #0f172a;
       --input-bg: #374151;
       --shadow: 0 4px 24px rgba(0,0,0,0.4);
-
-      /* Height of the fixed top navbar (.sidebar). Single source of truth —
-         every breakpoint that changes the navbar's height overrides this
-         instead of its own copy of the pixel value, so .main-content and
-         .order-panel can never drift out of sync with the navbar again. */
-      --navbar-h: 46px;
-      /* Extra breathing room between the fixed top navbar and the page
-         content below it (.main-content only — the mobile cart overlay
-         intentionally stays flush, see its `top: var(--navbar-h)` rules). */
-      --navbar-gap: 22px;
     }
 
     [data-theme="light"] {
@@ -270,17 +260,9 @@
     /* ========== TOP NAVBAR ========== */
     /* (kept the .sidebar / .sidebar-header / .nav-links class names so the
        existing JS — toggleSidebar()/closeSidebar() — keeps working unchanged.
-       Visually this is now a horizontal bar pinned to the very top of the app.
-       It's position:fixed (full width, top:0). Both .main-content and
-       .order-panel are offset by --navbar-h so nothing ever sits underneath
-       it — see that variable in :root and its per-breakpoint overrides
-       below. */
+       Visually this is now a horizontal bar pinned to the very top of the app. */
     .sidebar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      width: auto;
+      width: 100%;
       background: var(--sidebar-bg);
       display: flex;
       flex-direction: row;
@@ -288,32 +270,33 @@
       gap: 4px;
       border-right: none;
       border-bottom: 1px solid rgba(255,255,255,0.07);
-      z-index: 300;
+      position: relative;
+      z-index: 200;
       flex-shrink: 0;
       padding: 0 12px;
-      min-height: 46px;
+      min-height: 60px;
     }
 
     .sidebar-header {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 6px 14px 6px 4px;
+      padding: 10px 14px 10px 4px;
       border-bottom: none;
       border-right: 1px solid rgba(255,255,255,0.07);
       flex-shrink: 0;
     }
 
     .nav-logo {
-      width: 30px;
-      height: 30px;
+      width: 38px;
+      height: 38px;
       border-radius: 50%;
       border: 2px solid var(--orange);
       background: var(--orange);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1rem;
+      font-size: 1.2rem;
       flex-shrink: 0;
     }
 
@@ -349,7 +332,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 14px;
+      padding: 10px 14px;
       color: var(--text2);
       text-decoration: none;
       font-weight: 600;
@@ -374,103 +357,27 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 4px 4px 4px 14px;
+      padding: 8px 4px 8px 14px;
       border-top: none;
       border-left: 1px solid rgba(255,255,255,0.07);
       flex-shrink: 0;
     }
 
-    .cashier-label { font-size: 0.7rem; color: var(--text3); font-weight: 600; letter-spacing: 1px; }
-    .cashier-name { font-size: 0.9rem; font-weight: 800; color: var(--orange); }
-
-    /* ── Cashier Dropdown ── */
-    .cashier-dropdown {
-      position: relative;
-      flex-shrink: 0;
-    }
-
-    .cashier-dropdown-trigger {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 7px 12px;
+    .cashier-display {
       background: rgba(232,124,30,0.12);
       border: 1px solid rgba(232,124,30,0.3);
       border-radius: 10px;
-      cursor: pointer;
-      font-family: 'Nunito', sans-serif;
-      transition: all 0.2s;
-      white-space: nowrap;
-      color: var(--text);
-    }
-    .cashier-dropdown-trigger:hover {
-      background: rgba(232,124,30,0.2);
-      border-color: rgba(232,124,30,0.5);
-    }
-
-    .cashier-avatar { font-size: 0.95rem; }
-    .cashier-caret {
-      font-size: 0.65rem;
-      color: var(--text3);
-      margin-left: 2px;
-      transition: transform 0.2s;
-    }
-
-    .cashier-dropdown-menu {
-      display: none;
-      position: absolute;
-      bottom: calc(100% + 8px);
-      right: 0;
-      min-width: 190px;
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      box-shadow: 0 8px 28px rgba(0,0,0,0.35);
-      overflow: hidden;
-      z-index: 500;
-      animation: dropFadeIn 0.15s ease;
-    }
-    .cashier-dropdown-menu.open { display: block; }
-
-    @keyframes dropFadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .cashier-dropdown-info {
+      padding: 6px 12px;
       display: flex;
-      flex-direction: column;
-      gap: 2px;
-      padding: 12px 14px 10px;
-    }
-    .cdrop-label { font-size: 0.68rem; color: var(--text3); font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; }
-    .cdrop-name  { font-size: 1rem; font-weight: 800; color: var(--orange); }
-
-    .cashier-dropdown-divider {
-      height: 1px;
-      background: var(--border);
-      margin: 0;
-    }
-
-    .cashier-dropdown-item {
-      display: flex;
+      flex-direction: row;
       align-items: center;
       gap: 8px;
-      width: 100%;
-      padding: 11px 14px;
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-family: 'Nunito', sans-serif;
-      font-size: 0.88rem;
-      font-weight: 700;
-      color: var(--text2);
-      text-align: left;
-      transition: background 0.15s;
+      margin-bottom: 0;
+      white-space: nowrap;
     }
-    .cashier-dropdown-item:hover { background: var(--bg3); }
-    .cashier-dropdown-item.danger { color: #ef4444; }
-    .cashier-dropdown-item.danger:hover { background: rgba(239,68,68,0.1); }
+
+    .cashier-label { font-size: 0.7rem; color: var(--text3); font-weight: 600; letter-spacing: 1px; }
+    .cashier-name { font-size: 0.9rem; font-weight: 800; color: var(--orange); }
 
     .btn-logout {
       width: auto;
@@ -508,11 +415,6 @@
       overflow-x: hidden;
       min-width: 0;
       min-height: 0;
-      /* .sidebar is now position:fixed (removed from normal flow) so this
-         margin-top reserves the same space it used to occupy, keeping
-         every page's content starting in the same place as before, plus
-         --navbar-gap so content isn't flush against the navbar. */
-      margin-top: calc(var(--navbar-h) + var(--navbar-gap));
     }
 
     /* TOP BAR */
@@ -554,54 +456,8 @@
       white-space: nowrap;
     }
 
-
-    /* ========== POS PAGE LEFT-COLUMN TOPBAR ========== */
-    /* This topbar is INSIDE .pos-left-col (left grid column of .pos-layout).
-       It spans only the left/menu area, matching the design where the navbar
-       sits above the menu and the order panel is a full-height right column. */
-    .topbar-pos {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 0 24px;
-      height: 56px;
-      flex-shrink: 0;
-      background: var(--card-bg);
-      border-bottom: 1px solid var(--border);
-      /* Not sticky — it's already at the top of its flex column */
-      position: relative;
-      z-index: 50;
-    }
-    .topbar-pos .page-title {
-      font-family: 'Bangers', cursive;
-      font-size: 1.5rem;
-      color: var(--orange);
-      letter-spacing: 1px;
-    }
-    .topbar-pos-right {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-left: auto;
-    }
-    /* Override dropdown menu direction — open downward from the topbar */
-    .topbar-pos .cashier-dropdown-menu {
-      bottom: auto;
-      top: calc(100% + 8px);
-      right: 0;
-    }
-
     /* ========== PAGE CONTENT ========== */
     .page-content {
-      /* Flex item inside .main-content — must have flex:1 so its height is
-         a real pixel value. Without it, percentage heights on descendants
-         (e.g. #page-pos.active { height:100% }) resolve to "auto" (= 0)
-         on Android Chrome, collapsing .pos-layout → .menu-grid to zero
-         height and making the product grid invisible on phones/tablets.
-         Non-POS pages scroll inside this container via overflow-y:auto. */
-      display: flex;
-      flex-direction: column;
-      flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
       min-height: 0;
@@ -619,50 +475,19 @@
     #page-pos.active {
       display: flex;
       flex-direction: column;
-      /* flex:1 fills the defined height of .page-content (which now has
-         flex:1 in .main-content). Using height:100% here was fragile —
-         it only works when the parent has an explicit pixel height, which
-         .page-content never had, causing the grid to collapse on Android. */
-      flex: 1;
-      min-height: 0;
-    }
-
-    /* Hide the default topbar when POS page is active */
-    #page-pos.active ~ * .topbar-default,
-    .page-content:has(#page-pos.active) ~ .topbar-default {
-      display: none;
-    }
-    body:has(#page-pos.active) .topbar-default {
-      display: none;
-    }
-    /* When page-pos is NOT active, hide the pos topbar */
-    body:not(:has(#page-pos.active)) .topbar-pos {
-      display: none;
+      height: 100%;
     }
 
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
     /* ========== POS LAYOUT ========== */
-    /* Two-column grid: left col = navbar + menu stacked vertically,
-       right col = order panel spanning full height from top to bottom.
-       This matches the design: navbar only covers the menu area,
-       order panel is a full-height right sidebar. */
     .pos-layout {
       display: grid;
-      grid-template-columns: 1fr clamp(400px, 38vw, 580px);
-      gap: 0;
-      flex: 1;
-      min-height: 0;
+      grid-template-columns: 1fr 380px;
+      gap: 20px;
+      height: 100%;
       overflow: hidden;
-      padding: 0;
-    }
-
-    /* Left column: topbar-pos stacked above menu-panel */
-    .pos-left-col {
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-      overflow: hidden;
+      padding: 16px 24px 24px;
     }
 
     /* ---- LEFT: Menu Panel ---- */
@@ -670,10 +495,6 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      padding: 16px 24px 24px;
-      /* flex:1 fills remaining height below topbar-pos inside pos-left-col */
-      flex: 1;
-      min-height: 0;
     }
 
     .search-bar {
@@ -892,24 +713,15 @@
 
     /* ========== IMPROVED ORDER PANEL ========== */
     /* ===== ORDER PANEL — REDESIGNED ===== */
-    /* Full-height right column, spanning the ENTIRE height of .pos-layout
-       (from top to bottom, independent of the topbar on the left).
-       This matches the design where the order panel is a full-height
-       sidebar that starts at the very top of the POS section. */
     .order-panel {
-      /* In-flow: sits in the right grid column of .pos-layout.
-         Height fills the full grid row from top to bottom. */
-      position: relative;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 18px;
       display: flex;
       flex-direction: column;
-      background: var(--card-bg);
-      border: none;
-      border-left: 1px solid var(--border);
-      border-radius: 0;
-      overflow-y: auto;
-      overflow-x: hidden;
+      overflow: hidden;
+      box-shadow: 0 6px 28px rgba(0,0,0,0.22);
     }
-
 
     .order-header {
       padding: 12px 16px;
@@ -1257,9 +1069,7 @@
       font-family: 'Nunito', sans-serif;
       transition: all 0.15s;
     }
-    @media (max-width: 900px), (max-width: 1024px) and (max-height: 500px) and (orientation: landscape) {
-      .btn-back-menu { display: block; }
-    }
+    @media (max-width: 900px) { .btn-back-menu { display: block; } }
 
     .btn-clear-order {
       width: 100%;
@@ -1721,20 +1531,18 @@
        top in one row; the nav-links scroll horizontally if they don't all
        fit, and the cashier name/text trims to keep things compact. ----- */
     @media (max-width: 1099px) {
-      :root { --navbar-h: 48px; }
-      .sidebar { min-height: 48px; gap: 2px; padding: 0 8px; }
-      .sidebar-header { padding: 6px 10px 6px 2px; }
-      .nav-item { padding: 7px 11px; font-size: 0.8rem; }
+      .sidebar { min-height: 56px; gap: 2px; padding: 0 8px; }
+      .sidebar-header { padding: 8px 10px 8px 2px; }
+      .nav-item { padding: 9px 11px; font-size: 0.8rem; }
       .nav-item span:last-child { display: inline; }
       .cashier-label { display: none; }
-      .cashier-dropdown-trigger { padding: 5px 9px; }
+      .cashier-display { padding: 6px 10px; }
 
-      /* Order panel: use a fixed min-width so it stays usable, and a
-         proportional share so it doesn't crowd out the menu grid.
-         Width must match the grid spacer column above. top must match
-         .sidebar's min-height (48px) at this breakpoint. */
-      .pos-layout { grid-template-columns: 1.2fr clamp(340px, 42%, 500px); gap: 0; padding: 0; }
-      .menu-panel { padding: 14px 16px 16px; }
+      /* Order panel: shrink from the fixed 380px desktop width to a
+         proportional share of the viewport so it doesn't crowd out the
+         menu grid on tablet-width screens. */
+      .pos-layout { grid-template-columns: 1.6fr 1fr; gap: 14px; padding: 14px 16px 16px; }
+      .order-panel { min-width: 0; }
     }
 
     /* ----- Phone (≤700px, e.g. Android phones): collapse the nav links
@@ -1743,7 +1551,7 @@
     @media (max-width: 700px) {
       .menu-btn { display: flex; order: -1; }
       .sidebar { flex-wrap: nowrap; }
-      .sidebar-header { border-right: none; padding: 6px 0; flex: 1; }
+      .sidebar-header { border-right: none; padding: 8px 0; flex: 1; }
       .brand-sub { display: none; }
 
       .nav-links {
@@ -1757,142 +1565,30 @@
         background: var(--sidebar-bg);
         border-bottom: 1px solid rgba(255,255,255,0.07);
         box-shadow: 0 10px 24px rgba(0,0,0,0.4);
-        max-height: calc(100dvh - 46px);
+        max-height: calc(100dvh - 56px);
         overflow-y: auto;
         padding: 6px 0;
         z-index: 200;
       }
       .sidebar.open .nav-links { display: flex; }
-      .nav-item { border-bottom: none; border-left: 3px solid transparent; border-radius: 0; padding: 11px 18px; font-size: 0.9rem; }
+      .nav-item { border-bottom: none; border-left: 3px solid transparent; border-radius: 0; padding: 13px 18px; font-size: 0.9rem; }
       .nav-item.active { border-bottom: none; border-left-color: var(--orange); }
 
       .sidebar-footer { border-left: none; padding: 0; gap: 8px; }
-      .cashier-dropdown-trigger { padding: 7px 10px; }
-      .cashier-name, .cashier-caret { display: none; }
-      .cashier-avatar { font-size: 1.1rem; }
-      .cashier-dropdown-menu { bottom: calc(100% + 6px); right: 0; min-width: 170px; }
+      .cashier-display { display: none; }
       .btn-logout { padding: 9px 10px; font-size: 0; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; }
       .btn-logout::before { content: '🔒'; font-size: 1.05rem; }
 
-      /* Portrait phones: single column, order panel as fullscreen overlay */
-      .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; padding: 0; }
-      .pos-left-col { min-height: 0; overflow: visible; height: auto; }
-      .menu-panel { padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px)); min-height: 0; height: auto; }
+      .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px)); }
       #page-pos { height: auto; }
-      /* Undo the base flex:1 so portrait phone keeps natural-scroll layout.
-         flex:none + height:auto lets the pos-layout grow to its content
-         height and the page scrolls inside .page-content's overflow-y:auto. */
-      #page-pos.active { flex: none; height: auto; min-height: 0; }
-      /* On mobile, hide the pos topbar — nav is already in the top navbar */
-      .topbar-pos { display: none !important; }
+      .menu-panel { min-height: 0; height: auto; }
       .order-panel { display: none; }
-      .order-panel.show-mobile {
-        display: flex;
-        position: fixed;
-        top: var(--navbar-h);
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 250;
-        border-radius: 0;
-      }
+      .order-panel.show-mobile { display: flex; position: fixed; inset: 0; z-index: 250; border-radius: 0; }
 
       .page.active { padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)); }
       #page-pos.active { padding: 0 !important; }
       .menu-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
       .summary-cards { grid-template-columns: 1fr 1fr; }
-    }
-
-    /* ----- Phone landscape: single column, FAB + overlay cart -----
-       Detected by SHORT HEIGHT + landscape orientation, not by width.
-       A rotated phone's width becomes its old portrait height, which on
-       modern Android phones is usually 700-950px — well above any
-       "phone" width cutoff — so a width-only query here would almost
-       never match real devices (this is exactly the gap that let the
-       FAB sneak through and the previous tab-bar UI sit unreachable).
-       A phone's SHORT dimension stays short no matter how it's held —
-       virtually no phone has either dimension above ~480px, while even
-       the smallest tablets exceed 500px on both — so max-height is the
-       reliable signal. max-width is an extra sanity cap so a merely
-       short, very wide desktop browser window doesn't get treated as
-       a phone. This reuses the exact same FAB + overlay mechanic as
-       portrait — no separate tab-bar UI to keep in sync anymore. ----- */
-    @media (max-width: 1024px) and (max-height: 500px) and (orientation: landscape) {
-
-      /* Collapse top navbar to minimum height */
-      :root { --navbar-h: 44px; }
-      .sidebar { min-height: 44px; padding: 0 8px; }
-      .sidebar-header { padding: 4px 0; }
-      .brand-sub { display: none; }
-      .nav-logo { width: 30px; height: 30px; font-size: 0.95rem; }
-      .brand-name { font-size: 0.9rem; }
-
-      /* POS page fills the available height */
-      #page-pos, #page-pos.active {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        overflow: hidden;
-        padding: 0 !important;
-      }
-
-      /* Single-column; bottom padding clears the floating cart button */
-      .pos-layout {
-        grid-template-columns: 1fr;
-        height: 100%;
-        overflow: hidden;
-        padding: 0;
-      }
-      .pos-left-col {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        overflow: hidden;
-      }
-      .menu-panel {
-        padding: 8px 10px calc(90px + env(safe-area-inset-bottom, 0px));
-      }
-
-      /* Menu panel: full width, scrollable */
-      .menu-panel {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        overflow: hidden;
-      }
-      .menu-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
-      .menu-item { padding: 9px 10px; }
-      .menu-item-emoji { font-size: 1.45rem; }
-      .search-bar { margin-bottom: 8px; }
-      .category-tabs { margin-bottom: 8px; }
-
-      /* Order panel: full-screen overlay, same mechanic as portrait */
-      .order-panel { display: none; }
-      .order-panel.show-mobile {
-        display: flex;
-        flex-direction: column;
-        position: fixed;
-        top: var(--navbar-h);
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 250;
-        border-radius: 0;
-      }
-
-      /* Tighten order panel contents */
-      .order-header { padding: 8px 12px; }
-      .order-items { padding: 6px 8px; min-height: 60px; }
-      .order-item { padding: 6px 8px; margin-bottom: 4px; }
-      .order-summary { padding: 7px 12px 6px; gap: 3px; }
-      .summary-row { font-size: 0.8rem; }
-      .summary-row.total { font-size: 1rem; padding: 6px 0 2px; }
-      .summary-row.total span:last-child { font-size: 1.2rem; }
-      .payment-section { padding: 7px 12px 8px; gap: 7px; }
-      .quick-cash { gap: 4px; }
-      .quick-cash-btn { padding: 4px 2px; font-size: 0.68rem; }
-      .btn-charge { padding: 11px; font-size: 1rem; }
-      .cash-input { font-size: 0.95rem; padding: 8px 10px; }
     }
 
     /* ========== FLOATING CART BTN (mobile) ========== */
@@ -1930,7 +1626,7 @@
       font-family: 'Nunito', sans-serif;
     }
 
-    @media (max-width: 900px), (max-width: 1024px) and (max-height: 500px) and (orientation: landscape) {
+    @media (max-width: 900px) {
       .float-cart-btn { display: flex; align-items: center; justify-content: center; }
     }
 
@@ -1950,110 +1646,4 @@
       border-radius: 12px;
       padding: 12px 14px;
       background: rgba(239, 68, 68, 0.04);
-    }
-
-    /* ========== LARGE DESKTOP (≥1400px): Wider order panel ========== */
-    @media (min-width: 1400px) {
-      .pos-layout {
-        grid-template-columns: 1fr clamp(460px, 36vw, 620px);
-        gap: 0;
-        padding: 0;
-      }
-      .menu-panel { padding: 20px 32px 28px; }
-      .order-title { font-size: 1.4rem; }
-      .summary-row.total { font-size: 1.2rem; }
-      .summary-row.total span:last-child { font-size: 1.5rem; }
-      .btn-charge { font-size: 1.1rem; padding: 16px; }
-      .menu-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
-      .menu-item { padding: 18px 16px; }
-      .menu-item-emoji { font-size: 2.4rem; }
-      .menu-item-name { font-size: 0.95rem; }
-      .menu-item-price { font-size: 1.1rem; }
-    }
-
-    /* ========== EXTRA LARGE DESKTOP (≥1800px): Even more space ========== */
-    @media (min-width: 1800px) {
-      .pos-layout {
-        grid-template-columns: 1fr clamp(520px, 34vw, 680px);
-        gap: 0;
-        padding: 0;
-      }
-      .menu-panel { padding: 24px 40px 32px; }
-    }
-
-    /* ========== NARROWER TABLET WIDTHS (701px-900px) ========== */
-    /* Width adjustment for narrower tablets, in portrait or landscape —
-       shrinks the order panel's width and the menu grid to fit.
-       min-height: 501px excludes short landscape PHONES that happen to
-       land in this same width range (a rotated phone can be 701-900px
-       wide) — those are claimed by the dedicated phone-landscape block
-       above (max-height: 500px) instead, so the two-column layout here
-       never fights with that block's single-column override.
-       The height-based block further down handles the case where a
-       genuine tablet's screen is also short (real landscape tablets,
-       e.g. 1024×768), and overrides the touch-target sizing in
-       .order-header/.order-items/etc below. */
-    @media (min-width: 701px) and (max-width: 900px) and (min-height: 501px) {
-      .pos-layout { grid-template-columns: 1fr clamp(300px, 45%, 420px); gap: 0; padding: 0; }
-      .menu-panel { padding: 12px 14px 14px; }
-      .menu-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
-      .menu-item { padding: 12px 12px; }
-      .menu-item-emoji { font-size: 1.7rem; }
-      .order-header { padding: 10px 14px; }
-      .order-items { padding: 8px 10px; }
-      .payment-section { padding: 8px 12px 10px; }
-      .quick-cash { gap: 5px; }
-      .quick-cash-btn { padding: 5px 7px; font-size: 0.72rem; }
-    }
-
-    /* ----- TABLET LANDSCAPE (701px-1180px wide, short height) -----
-       A tablet rotated to landscape (1024×768, 1280×800, etc.) is wide
-       enough to keep the menu+cart side-by-side, but not tall enough for
-       the cart's header+summary+payment+numpad+charge button to all fit
-       at full desktop size. This is a real redesign of the cart's
-       internals for that case — not just smaller text everywhere. Padding
-       and gaps shrink hard throughout, but the controls people actually
-       tap repeatedly (quick-cash buttons, qty +/-, charge button) keep an
-       explicit min-height so they never become too small to hit reliably.
-       min-height: 501px again excludes short landscape phones in this
-       width range, which use the FAB+overlay block instead. */
-    @media (min-width: 701px) and (max-width: 1180px) and (max-height: 800px) and (min-height: 501px) {
-      .order-header { padding: 8px 14px; }
-      .order-title { font-size: 1.05rem; }
-
-      /* Cart items list: let it shrink hard when empty/short, since the
-         fixed sections below need the room more than this does. */
-      .order-items { padding: 6px 10px; min-height: 56px; }
-      .order-empty { height: 64px; gap: 6px; }
-      .order-empty-icon { font-size: 1.6rem; }
-      .order-empty span:last-child { font-size: 0.8rem; }
-
-      .order-summary { padding: 6px 14px; gap: 2px; }
-      .summary-row { font-size: 0.8rem; }
-      .summary-row.total { font-size: 1rem; padding: 5px 0 2px; margin-top: 2px; }
-      .summary-row.total span:last-child { font-size: 1.15rem; }
-
-      .payment-section { padding: 6px 14px 10px; gap: 6px; }
-      .payment-label { font-size: 0.7rem; }
-
-      .cash-input { padding: 8px 10px; font-size: 1rem; }
-      .cash-label { padding: 0 10px; font-size: 0.74rem; }
-
-      /* Quick-cash buttons: keep a real tap height (~38px) — this is the
-         control cashiers use over and over, it must stay easy to hit. */
-      .quick-cash { gap: 6px; }
-      .quick-cash-btn { padding: 9px 2px; font-size: 0.74rem; min-height: 38px; }
-
-      .change-display { padding: 7px 12px; }
-      .change-label { font-size: 0.74rem; }
-      .change-amount { font-size: 1.05rem; }
-
-      /* Charge button: this is the most important tap target in the
-         whole panel — never shrink it below a comfortable thumb size. */
-      .btn-charge { padding: 12px; font-size: 1.05rem; min-height: 46px; }
-      .btn-clear-order { padding: 7px; font-size: 0.78rem; }
-
-      /* Quantity +/- buttons in the cart list: keep these tappable too. */
-      .oi-qty-btn { width: 30px; height: 30px; }
-      .oi-del { width: 28px; height: 28px; }
     }

@@ -203,15 +203,11 @@ function renderOwnerSummary() {
   const summaryDate = document.getElementById('ownerSummaryDate')?.value || new Date().toISOString().split('T')[0];
   const container = document.getElementById('ownerSummaryContent');
   if (!container) return;
-  // Load shared expenses for the day (expenses are store-wide, not per cashier)
-  const dayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(summaryDate));
-  const totalExpenses = dayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
-
   let totalSales = 0, totalCashAdv = 0, totalOrders = 0, rows = '';
   cashiers.forEach(c => {
     let orders = [], cashAdvances = [];
     try {
-      const s = cloudStorage.getItem(getCashierStorageKey(c.id));
+      const s = localStorage.getItem(getCashierStorageKey(c.id));
       if (s) {
         const parsed = JSON.parse(s);
         orders = parsed.orders || [];
@@ -220,6 +216,10 @@ function renderOwnerSummary() {
     } catch(e) {}
     const dayOrders = orders.filter(o => o.date && o.date.startsWith(summaryDate));
     const sales = dayOrders.reduce((sum, o) => sum + o.total, 0);
+    // Cash advances are deducted from the day's sales — same rule as the
+    // cashier's own Shift Summary (renderSummary()). Without this, the
+    // owner's total looked higher than what was actually collected, since
+    // cash handed out as an advance was never subtracted here.
     const dayCashAdv = cashAdvances
       .filter(a => a.datetime && a.datetime.startsWith(summaryDate))
       .reduce((sum, a) => sum + (a.amount || 0), 0);
@@ -238,34 +238,18 @@ function renderOwnerSummary() {
       </div>`;
   });
   const totalNetSales = Math.max(0, totalSales - totalCashAdv);
-  const totalAfterExpenses = Math.max(0, totalNetSales - totalExpenses);
   container.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
       <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:14px;text-align:center;">
-        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">GROSS SALES</div>
-        <div style="font-size:1.4rem;font-weight:800;color:var(--green);">₱${fmt(totalSales)}</div>
+        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">NET SALES${totalCashAdv > 0 ? ' (AFTER ADVANCES)' : ''}</div>
+        <div style="font-size:1.4rem;font-weight:800;color:var(--green);">₱${fmt(totalNetSales)}</div>
+        ${totalCashAdv > 0 ? `<div style="font-size:0.72rem;color:var(--text3);margin-top:2px;">₱${fmt(totalSales)} gross &minus; ₱${fmt(totalCashAdv)} advances</div>` : ''}
       </div>
       <div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:12px;padding:14px;text-align:center;">
         <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">TOTAL ORDERS</div>
         <div style="font-size:1.4rem;font-weight:800;color:var(--blue);">${totalOrders}</div>
       </div>
     </div>
-    ${(totalCashAdv > 0 || totalExpenses > 0) ? `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-      ${totalCashAdv > 0 ? `<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:12px;padding:14px;text-align:center;">
-        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">CASH ADVANCES</div>
-        <div style="font-size:1.3rem;font-weight:800;color:var(--red);">-₱${fmt(totalCashAdv)}</div>
-      </div>` : ''}
-      ${totalExpenses > 0 ? `<div style="background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);border-radius:12px;padding:14px;text-align:center;">
-        <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">EXPENSES</div>
-        <div style="font-size:1.3rem;font-weight:800;color:var(--orange);">-₱${fmt(totalExpenses)}</div>
-      </div>` : ''}
-    </div>
-    <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:14px;text-align:center;margin-bottom:12px;">
-      <div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">NET (AFTER ADVANCES + EXPENSES)</div>
-      <div style="font-size:1.5rem;font-weight:800;color:var(--green);">₱${fmt(totalAfterExpenses)}</div>
-      <div style="font-size:0.72rem;color:var(--text3);margin-top:2px;">₱${fmt(totalSales)} − ₱${fmt(totalCashAdv)} advances − ₱${fmt(totalExpenses)} expenses</div>
-    </div>` : ''}
     <div style="font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">PER CASHIER</div>
     ${rows || '<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No data for this date.</p>'}`;
 }
@@ -326,7 +310,7 @@ const INGREDIENT_TEMPLATE_KEY = 'burgerStreetIngredientTemplate';
 
 function loadIngredientTemplate() {
   try {
-    const s = cloudStorage.getItem(INGREDIENT_TEMPLATE_KEY);
+    const s = localStorage.getItem(INGREDIENT_TEMPLATE_KEY);
     if (s) return JSON.parse(s);
   } catch (e) {}
   // First-ever run, nothing saved yet: seed with sensible defaults.
@@ -342,7 +326,7 @@ function loadIngredientTemplate() {
   };
 }
 function saveIngredientTemplate(tpl) {
-  try { cloudStorage.setItem(INGREDIENT_TEMPLATE_KEY, JSON.stringify(tpl)); } catch (e) {}
+  try { localStorage.setItem(INGREDIENT_TEMPLATE_KEY, JSON.stringify(tpl)); } catch (e) {}
 }
 // Called whenever an opening inventory is saved — keeps the template in sync
 // with any new ingredient/amount names the cashier types in, WITHOUT storing
@@ -365,24 +349,24 @@ function syncIngredientTemplate(ingredients, amounts) {
 
 function loadInventoryData() {
   try {
-    const s = cloudStorage.getItem(INV_STORE_KEY);
+    const s = localStorage.getItem(INV_STORE_KEY);
     return s ? JSON.parse(s) : {};
   } catch(e) { return {}; }
 }
 
 function saveInventoryData(data) {
-  try { cloudStorage.setItem(INV_STORE_KEY, JSON.stringify(data)); } catch(e) {}
+  try { localStorage.setItem(INV_STORE_KEY, JSON.stringify(data)); } catch(e) {}
 }
 
 // Shared deliveries (visible to all cashiers)
 function loadSharedDeliveries() {
   try {
-    const s = cloudStorage.getItem(SHARED_DELIVERY_KEY);
+    const s = localStorage.getItem(SHARED_DELIVERY_KEY);
     return s ? JSON.parse(s) : [];
   } catch(e) { return []; }
 }
 function saveSharedDeliveries(arr) {
-  try { cloudStorage.setItem(SHARED_DELIVERY_KEY, JSON.stringify(arr)); } catch(e) {}
+  try { localStorage.setItem(SHARED_DELIVERY_KEY, JSON.stringify(arr)); } catch(e) {}
 }
 
 // Returns the active shift for a dateKey from the inventory data.
@@ -409,15 +393,8 @@ function getActiveShift(dateKey, data) {
 // inventory is never lost when a cashier skips the closing step.
 function seedOpeningFromLastClosing(dateKey, invData) {
   const shifts = getDayShifts(dateKey, invData);
-  // If there's already a shift for this date with a non-empty opening, don't re-seed.
-  // An opening is considered non-empty only when it has at least one ingredient or
-  // amount — an empty shell {ingredients:[], amounts:[]} left by a failed/partial
-  // pull-out must not block seeding, or the opening would stay blank forever.
-  const lastShift = shifts.length ? shifts[shifts.length - 1] : null;
-  const hasRealOpening = !!(lastShift && lastShift.opening &&
-    ((lastShift.opening.ingredients && lastShift.opening.ingredients.length) ||
-     (lastShift.opening.amounts     && lastShift.opening.amounts.length)));
-  if (hasRealOpening) return;
+  // If there's already a shift today with an opening, don't re-seed
+  if (shifts.length && shifts[shifts.length - 1].opening) return;
 
   // Look for last closing — could be a previous shift on the same day or a previous day
   let lastClosing = null;
@@ -488,49 +465,15 @@ function seedOpeningFromLastClosing(dateKey, invData) {
       seededFrom
     };
   } else if (lastOpeningFallback) {
-    // Fallback: cashier never closed — carry the opening forward.
-    // PERMANENT FIX: the source day may still have LIVE auto-deduct tracking
-    // (usedQty) on it — e.g. it's today, sales already happened, but no
-    // closing has been saved yet. That usedQty is real, current stock
-    // movement, not stale leftover state. The old code copied the raw
-    // opening qty and ignored usedQty entirely, so jumping to any date with
-    // no record of its own (including a future date, or "today" before its
-    // closing exists) seeded a FULL, undeducted qty — looking exactly like
-    // auto-deduct never ran. Net usedQty out of qty here so the carried-
-    // forward number reflects what's actually left, while still never
-    // writing a usedQty field itself into the new opening (the field
-    // belongs to the source shift's own tracking, not the new day's).
-    //
-    // BUGFIX (cash not carrying over correctly when no closing was done):
-    // For cash `amounts`, usedAmount is NEVER written anywhere in this app —
-    // there is no live auto-deduct for cash the way there is for ingredient
-    // usedQty. The only thing that actually reduces cash during the day is
-    // an Expense record (saveExpense(), keyed by date). So netting out
-    // usedAmount here always nets out 0, and the fallback silently carried
-    // the FULL prior amount forward forever (e.g. opened with ₱4,000,
-    // ₱780 in expenses logged, never closed → next day still seeded ₱4,000
-    // instead of ₱3,220). Deduct that source day's actual logged expenses
-    // instead, distributed proportionally across the named amount items
-    // (same approach already used when pre-filling the closing modal), so
-    // the carried-forward cash always reflects what was really spent.
-    const fallbackExpenses  = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(fallbackFrom));
-    const fallbackAmounts   = lastOpeningFallback.amounts || [];
-    const fallbackFirstName = fallbackAmounts.length ? fallbackAmounts[0].name : null;
-    // Build per-name deduction map: cashSource targets specific item; legacy expenses hit first item
-    const fallbackDeductMap = {};
-    fallbackExpenses.forEach(e => {
-      const src = e.cashSource || fallbackFirstName;
-      if (src) fallbackDeductMap[src] = (fallbackDeductMap[src] || 0) + (e.amount || 0);
-    });
+    // Fallback: cashier never closed — carry the opening amounts forward as-is
+    // so inventory values are not lost.
     newOpening = {
       ingredients: (lastOpeningFallback.ingredients || []).map(i => ({
-        name: i.name, unit: i.unit,
-        qty: Math.max(0, (i.qty ?? 0) - (i.usedQty ?? 0))
+        name: i.name, unit: i.unit, qty: (i.qty ?? 0)
       })),
-      amounts: fallbackAmounts.map(a => {
-        const deduction = Math.min(a.amount || 0, fallbackDeductMap[a.name] || 0);
-        return { name: a.name, amount: Math.max(0, (a.amount ?? 0) - deduction) };
-      }),
+      amounts: (lastOpeningFallback.amounts || []).map(a => ({
+        name: a.name, amount: (a.amount ?? 0)
+      })),
       seededFrom: fallbackFrom
     };
   } else {
@@ -693,24 +636,6 @@ let invAmounts    = []; // { name, amount }               — peso-based (openin
 
 // ---- OPEN MODAL ----
 function openInvModal(type) {
-  // FIX: Block closing inventory on past dates or non-active shifts.
-  if (type === 'closing') {
-    const viewingDate = getTodayInvKey();
-    const actualToday = getLocalDateKey();
-    if (viewingDate !== actualToday) {
-      showToast('⛔ Closing inventory can only be set for today.', 'error');
-      return;
-    }
-    const _d = loadInventoryData();
-    const _shifts = getDayShifts(viewingDate, _d);
-    const _viewIdx = (currentShiftIndex < 0 || currentShiftIndex >= _shifts.length)
-      ? _shifts.length - 1 : currentShiftIndex;
-    if (_viewIdx !== _shifts.length - 1) {
-      showToast('⛔ That shift is already closed.', 'error');
-      return;
-    }
-  }
-
   invModalType = type;
   const dateKey = getTodayInvKey();
   const data = loadInventoryData();
@@ -730,12 +655,7 @@ function openInvModal(type) {
       ? op.amounts
       : tpl.amounts.map(a => ({ ...a, amount: 0 }))
     ).map(a => ({...a}));
-    // Show a note if sales have already happened today — so the cashier
-    // understands why the number they type here differs from what's on the shelf.
-    const hasSales = invIngredients.some(i => (i.usedQty || 0) > 0);
-    document.getElementById('invIngDesc').textContent = hasSales
-      ? 'Edit the opening count (what you STARTED with). Sales already deducted today are shown below each item.'
-      : 'How many of each ingredient/supply do you have for today? (count in pieces, packs, bags, etc.)';
+    document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply do you have for today? (count in pieces, packs, bags, etc.)';
     document.getElementById('invAmtDesc').textContent = 'Enter the peso amount for today. (e.g. pocket money for change, petty cash, fund)';
   } else {
     const op = activeShift.opening || {};
@@ -750,30 +670,7 @@ function openInvModal(type) {
     if (cl.amounts && cl.amounts.length) {
       invAmounts = cl.amounts.map(a => ({...a}));
     } else {
-      // FIX: Pre-fill closing amounts with (opening amount − today's expenses).
-      // Without this, the default was the full opening amount, so if a cashier
-      // skipped adjusting the field manually, the next day seeded from the
-      // gross opening total (e.g. ₱4,000) instead of what was actually left
-      // after expenses (e.g. ₱4,000 − ₱780 = ₱3,220).
-      //
-      // Expenses with a cashSource are deducted from that specific named amount.
-      // Legacy expenses without a cashSource fall back to the first amount item.
-      // This ensures e.g. a ₱780 expense from "Pocket Money" only reduces that
-      // item, leaving "Cash on Hand" untouched.
-      const todayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(dateKey));
-      const opAmounts     = op.amounts || [];
-      const firstAmtName  = opAmounts.length ? opAmounts[0].name : null;
-      // Build per-name deduction totals
-      const expDeductMap  = {};
-      todayExpenses.forEach(e => {
-        const src = e.cashSource || firstAmtName;
-        if (src) expDeductMap[src] = (expDeductMap[src] || 0) + (e.amount || 0);
-      });
-      invAmounts = opAmounts.map(a => {
-        const deduction  = Math.min(a.amount || 0, expDeductMap[a.name] || 0);
-        const closingAmt = Math.max(0, (a.amount || 0) - deduction);
-        return { ...a, closingAmount: closingAmt, notes: '' };
-      });
+      invAmounts = (op.amounts || []).map(a => ({...a, closingAmount: a.amount, notes: ''}));
     }
     document.getElementById('invIngDesc').textContent = 'How many of each ingredient/supply is LEFT at the end of the shift?';
     document.getElementById('invAmtDesc').textContent = 'How much cash / amount is LEFT at the end of the shift?';
@@ -817,44 +714,25 @@ function renderInvModal() {
 
   if (!isClosing) {
     ingHeader.style.gridTemplateColumns = '1fr 90px 90px 32px';
-    const hasSalesHeader = invIngredients.some(i => (i.usedQty || 0) > 0);
     ingHeader.innerHTML = `
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">INGREDIENT / SUPPLY</span>
       <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">UNIT</span>
-      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">${hasSalesHeader ? 'ON SHELF NOW' : 'QTY FOR TODAY'}</span>
+      <span style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;">QTY FOR TODAY</span>
       <span></span>`;
 
-    ingList.innerHTML = invIngredients.map((ing, idx) => {
-      const soldToday = ing.usedQty || 0;
-      const remaining = Math.max(0, (ing.qty || 0) - soldToday);
-      const hasSales = soldToday > 0;
-      // Show the remaining (on-shelf) qty in the input, not the raw opening qty.
-      // Deliveries/pull-outs already adjust opening qty directly, so they naturally
-      // show up in ing.qty. Sales are tracked separately via usedQty — subtracting
-      // them here makes the modal consistent: the number shown is always "what's
-      // physically on your shelf right now."
-      // When saved, we write back (remaining) as the new qty and reset usedQty to 0,
-      // because the cashier is now confirming the current count from scratch.
-      const displayQty = hasSales ? remaining : (ing.qty || 0);
-      return `
-      <div style="margin-bottom:${hasSales ? '12px' : '8px'};">
-        <div style="display:grid;grid-template-columns:1fr 90px 90px 32px;gap:8px;align-items:center;">
-          <input type="text" class="input-field" value="${escHtml(ing.name||'')}" placeholder="e.g. Burger Patty"
-            style="padding:7px 10px;font-size:0.85rem;"
-            oninput="invIngredients[${idx}].name=this.value" />
-          <input type="text" class="input-field" value="${escHtml(ing.unit||'pcs')}" placeholder="pcs"
-            style="padding:7px 10px;font-size:0.85rem;text-align:center;"
-            oninput="invIngredients[${idx}].unit=this.value" />
-          <input type="number" class="input-field" value="${displayQty}" min="0" step="1" placeholder="0"
-            style="padding:7px 10px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--orange);"
-            oninput="invIngredients[${idx}].qty=parseInt(this.value)||0" />
-          <button class="inv-del-btn" onclick="removeIngredient(${idx})">✕</button>
-        </div>
-        ${hasSales ? `<div style="font-size:0.72rem;margin-top:3px;padding-left:4px;display:flex;gap:12px;">
-          <span style="color:var(--red);">🔥 −${soldToday} sold today already deducted</span>
-        </div>` : ''}
-      </div>`;
-    }).join('');
+    ingList.innerHTML = invIngredients.map((ing, idx) => `
+      <div style="display:grid;grid-template-columns:1fr 90px 90px 32px;gap:8px;align-items:center;margin-bottom:8px;">
+        <input type="text" class="input-field" value="${escHtml(ing.name||'')}" placeholder="e.g. Burger Patty"
+          style="padding:7px 10px;font-size:0.85rem;"
+          oninput="invIngredients[${idx}].name=this.value" />
+        <input type="text" class="input-field" value="${escHtml(ing.unit||'pcs')}" placeholder="pcs"
+          style="padding:7px 10px;font-size:0.85rem;text-align:center;"
+          oninput="invIngredients[${idx}].unit=this.value" />
+        <input type="number" class="input-field" value="${ing.qty||0}" min="0" step="1" placeholder="0"
+          style="padding:7px 10px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--orange);"
+          oninput="invIngredients[${idx}].qty=parseInt(this.value)||0" />
+        <button class="inv-del-btn" onclick="removeIngredient(${idx})">✕</button>
+      </div>`).join('');
 
   } else {
     // Closing ingredients: show opening qty, input closing qty
@@ -879,7 +757,7 @@ function renderInvModal() {
         <div style="text-align:center;font-weight:800;color:var(--blue);font-size:0.95rem;">${ing.qty||0}</div>
         <input type="number" class="input-field" value="${leftOver}" min="0" step="1" placeholder="0"
           style="padding:7px 6px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--green);border-color:rgba(16,185,129,0.4);"
-          oninput="invIngredients[${idx}].closingQty=this.value===''?null:Math.max(0,parseInt(this.value,10)||0);updateActualDiff(${idx})" />
+          oninput="invIngredients[${idx}].closingQty=parseInt(this.value)||0;updateActualDiff(${idx})" />
         <div>
           <input type="number" class="input-field" id="actualInp_${idx}" value="${hasActual ? ing.actualQty : ''}" min="0" step="1" placeholder="recount"
             style="padding:7px 6px;font-size:0.92rem;font-weight:800;text-align:center;color:var(--orange);border-color:rgba(251,146,60,0.4);width:100%;"
@@ -994,15 +872,8 @@ function saveInvModal() {
   const cashierName = activeCashier?.name || BIZ_NAME;
 
   if (invModalType === 'opening') {
-    // FIX: Strip stale tracking fields (usedQty, closingQty, actualQty) that
-    // belong to the previous shift. Saving them into the new opening causes
-    // phantom "already used" stock before any sales happen today.
-    const ings = invIngredients
-      .filter(i => i.name && i.name.trim())
-      .map(({ name, unit, qty }) => ({ name, unit, qty: qty ?? 0 }));
-    const amts = invAmounts
-      .filter(a => a.name && a.name.trim())
-      .map(({ name, amount }) => ({ name, amount: amount ?? 0 }));
+    const ings = invIngredients.filter(i => i.name && i.name.trim());
+    const amts = invAmounts.filter(a => a.name && a.name.trim());
     if (!ings.length && !amts.length) { showToast('Please add at least one item.', 'error'); return; }
     shift.opening = { ingredients: ings, amounts: amts, cashier: cashierName, savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'}) };
     syncIngredientTemplate(ings, amts);
@@ -1024,59 +895,14 @@ function saveInvModal() {
       }
     });
     shift.closing = {
-      // FIX: Only store fields needed for seeding; {...i} leaked usedQty
-      // into the closing record, making the next day's auto-seeded opening
-      // start with qty - usedQty instead of closingQty.
-      ingredients: invIngredients.map(({ name, unit, qty, closingQty, actualQty, notes }) => ({
-        name, unit,
-        qty,
-        closingQty: (closingQty !== null && closingQty !== undefined) ? closingQty : Math.max(0, qty || 0),
-        actualQty:  actualQty !== undefined ? actualQty : null,
-        notes:      notes || ''
-      })),
-      amounts: invAmounts.map(({ name, amount, closingAmount, actualAmount, notes }) => ({
-        name,
-        amount,
-        closingAmount: closingAmount ?? amount ?? 0,
-        actualAmount:  actualAmount !== undefined ? actualAmount : null,
-        notes:         notes || ''
-      })),
+      ingredients: invIngredients.map(i => ({...i})),
+      amounts: invAmounts.map(a => ({...a})),
       cashier: cashierName,
       savedAt: new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'})
     };
   }
 
   saveInventoryData(data);
-
-  // FIX: When opening or closing is manually edited, delete any future dates
-  // whose opening was auto-seeded from today (or from a chain of seeded dates)
-  // so they re-seed with correct values.
-  // CHAIN FIX: track invalidated dates so that Day C (seeded from Day B which
-  // was seeded from today) is also cleared, not just Day B.
-  {
-    const futureDates = Object.keys(data).filter(d => d > dateKey).sort();
-    let invChanged = false;
-    const invalidatedDates = new Set([dateKey]);
-    for (const futureDate of futureDates) {
-      const futureShifts = data[futureDate] && data[futureDate].shifts;
-      if (!futureShifts || !futureShifts.length) continue;
-      const firstShift = futureShifts[0];
-      if (!firstShift.opening) continue;
-      const sf = firstShift.opening.seededFrom;
-      if (sf && (sf === 'previous shift' || invalidatedDates.has(sf))) {
-        delete firstShift.opening;
-        if (!firstShift.closing) {
-          futureShifts.splice(0, 1);
-          if (!futureShifts.length) delete data[futureDate];
-        }
-        invChanged = true;
-        invalidatedDates.add(futureDate);
-      }
-      // No break — must scan ALL future dates to catch chains like A→B→C→D
-    }
-    if (invChanged) saveInventoryData(data);
-  }
-
   closeModal('invModal');
   renderInventory();
   // Opening/closing inventory changed -> stock limits on the New Order page
@@ -1152,75 +978,11 @@ function renderInventory() {
   const dateKey = getTodayInvKey();
   let data = loadInventoryData();
 
-  // Auto-seed opening from last closing if needed.
-  // CRITICAL FIX: Also re-seed when the existing opening was auto-seeded
-  // (has seededFrom), not manually entered by the cashier. Auto-seeded openings
-  // are stale snapshots — if a pull-out or delivery was recorded on the source
-  // date after this date was seeded, the stored qty here is wrong. Re-seeding on
-  // every view guarantees the opening always reflects the current source data.
-  // Manually-entered openings (no seededFrom) are never touched — they are the
-  // cashier's own physical count and must not be overwritten automatically.
+  // Auto-seed opening from last closing if needed
   const existingShifts = getDayShifts(dateKey, data);
-  const lastExistingShift = existingShifts.length ? existingShifts[existingShifts.length - 1] : null;
-  const isAutoSeeded = !!(lastExistingShift && lastExistingShift.opening && lastExistingShift.opening.seededFrom);
-  if (!existingShifts.length || !lastExistingShift || !lastExistingShift.opening || isAutoSeeded) {
-    // BUGFIX (auto-deduct / opening-carries-over bug): re-seeding rebuilds
-    // the opening from the source day's closing every time this page
-    // renders (so late deliveries/pull-outs on the source day get picked
-    // up — see comment above). But that rebuild used to throw away
-    // usedQty, which is THIS day's own live auto-deduct tracking (written
-    // by autoDeductIngredients() as sales happen today), not stale data
-    // from the source day. Losing it made auto-deduct look broken —
-    // remaining stock would jump back to the full opening qty every time
-    // the cashier simply reopened the Daily Inventory page — and it then
-    // corrupted the NEXT day's opening too, since that gets seeded from
-    // this day's closingQty, which the closing modal pre-fills from
-    // qty - usedQty (see openInvModal). Snapshot usedQty here and re-apply
-    // it (matched by ingredient/amount name) onto the freshly-seeded
-    // opening below, so today's sales are never lost by a re-seed.
-    const preservedIngUsed = {};
-    const preservedAmtUsed = {};
-    if (isAutoSeeded) {
-      ((lastExistingShift.opening.ingredients) || []).forEach(i => {
-        if (i.usedQty !== undefined) preservedIngUsed[(i.name || '').trim().toLowerCase()] = i.usedQty;
-      });
-      ((lastExistingShift.opening.amounts) || []).forEach(a => {
-        if (a.usedAmount !== undefined) preservedAmtUsed[(a.name || '').trim().toLowerCase()] = a.usedAmount;
-      });
-    }
-
-    // Delete the stale auto-seeded opening so seedOpeningFromLastClosing
-    // always generates a fresh one from the current source data.
-    if (isAutoSeeded) {
-      delete lastExistingShift.opening;
-      if (!lastExistingShift.closing) {
-        existingShifts.splice(existingShifts.length - 1, 1);
-        if (!existingShifts.length) delete data[dateKey];
-      }
-    }
+  if (!existingShifts.length || !existingShifts[existingShifts.length - 1].opening) {
     seedOpeningFromLastClosing(dateKey, data);
     data = loadInventoryData();
-
-    // Re-apply preserved usedQty/usedAmount onto the freshly-seeded opening.
-    if (isAutoSeeded && (Object.keys(preservedIngUsed).length || Object.keys(preservedAmtUsed).length)) {
-      const refreshedShift = getActiveShift(dateKey, data);
-      if (refreshedShift && refreshedShift.opening) {
-        (refreshedShift.opening.ingredients || []).forEach(i => {
-          const key = (i.name || '').trim().toLowerCase();
-          if (preservedIngUsed[key] !== undefined) {
-            // Cap to the new qty in case the re-seed changed available stock.
-            i.usedQty = Math.min(preservedIngUsed[key], i.qty || 0);
-          }
-        });
-        (refreshedShift.opening.amounts || []).forEach(a => {
-          const key = (a.name || '').trim().toLowerCase();
-          if (preservedAmtUsed[key] !== undefined) {
-            a.usedAmount = preservedAmtUsed[key];
-          }
-        });
-        saveInventoryData(data);
-      }
-    }
   }
 
   const dayShifts = getDayShifts(dateKey, data);
@@ -1302,12 +1064,6 @@ function renderInventory() {
   // Show/hide Set Opening button (today only)
   const btnOpen = document.getElementById('btnSetOpening');
   if (btnOpen) btnOpen.style.display = isToday ? '' : 'none';
-
-  // FIX: Hide Set Closing button on past dates and past shifts — only show
-  // for today's active (last) shift to prevent accidental past-date saves.
-  const isActiveShift = isToday && viewIdx === shiftCount - 1;
-  const btnSetClosing = document.getElementById('btnSetClosing');
-  if (btnSetClosing) btnSetClosing.style.display = isActiveShift ? '' : 'none';
 
   if (!hasOpening) {
     emptyEl.style.display = 'block';
@@ -1431,22 +1187,7 @@ function renderInventory() {
   const closeAmtTotal = closeAmounts.length ? closeAmounts.reduce((s, a) => s + effectiveCashAmt(a), 0) : null;
   const usedAmt = closeAmtTotal !== null ? Math.max(0, openAmtTotal - closeAmtTotal) : null;
 
-  // Expenses for the viewed date — deducted from opening cash in the display
-  const dayExpenses = loadExpenses().filter(e => e.datetime && e.datetime.startsWith(dateKey));
-  const dayExpenseTotal = dayExpenses.reduce((s, e) => s + (e.amount || 0), 0);
-  const openCashAfterExpenses = Math.max(0, openAmtTotal - dayExpenseTotal);
-
-  // BUGFIX (opening cash not reflecting today's expenses without a closing):
-  // This card used to always show the raw opening total (e.g. ₱4,000), even
-  // after expenses/cash-outs were logged against today (e.g. ₱780), because
-  // it read `openAmtTotal` instead of the already-computed expense-adjusted
-  // figure just above. The detailed breakdown further down the page (CASH
-  // TOTAL → − Expenses → REMAINING CASH) was already correct — only this
-  // headline summary card was stale. Using `openCashAfterExpenses` here
-  // makes the two agree, and — since it's driven purely by loadExpenses()
-  // for the viewed date — it stays correct live, with or without a closing
-  // ever being saved.
-  document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openCashAfterExpenses);
+  document.getElementById('invOpenTotal').textContent  = '₱' + fmt(openAmtTotal);
   document.getElementById('invCloseTotal').textContent = closeAmtTotal !== null ? '₱' + fmt(closeAmtTotal) : '—';
   const ingCountEl = document.getElementById('invIngCount');
   if (ingCountEl) ingCountEl.textContent = openIngredients.length + ' item' + (openIngredients.length !== 1 ? 's' : '');
@@ -1503,62 +1244,12 @@ function renderInventory() {
   }
   if (openAmounts.length) {
     openHTML += `<div style="font-size:0.72rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;">💵 Cash / Amounts</div>`;
-
-    // Compute per-name expense deductions so each row shows its own remaining balance
-    // Expenses with a cashSource are deducted from that specific named amount.
-    // Expenses without a cashSource (legacy) fall back to the first amount.
-    const firstAmtName = openAmounts.length ? openAmounts[0].name : null;
-    const expenseByName = {};
-    dayExpenses.forEach(e => {
-      const src = e.cashSource || firstAmtName;
-      if (src) expenseByName[src] = (expenseByName[src] || 0) + (e.amount || 0);
-    });
-
-    openHTML += openAmounts.map(a => {
-      const deducted  = expenseByName[a.name] || 0;
-      const remaining = Math.max(0, (a.amount || 0) - deducted);
-      const hasDeduct = deducted > 0;
-      return `
-      <div class="inv-list-item" style="flex-direction:column;align-items:stretch;gap:2px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-weight:700;">${escHtml(a.name)}</span>
-          <span style="font-weight:800;color:var(--blue);">₱${fmt(a.amount||0)}</span>
-        </div>
-        ${hasDeduct ? `
-        <div style="display:flex;justify-content:space-between;font-size:0.78rem;color:var(--orange);padding-left:4px;">
-          <span>− Expenses deducted</span>
-          <span style="font-weight:700;">−₱${fmt(deducted)}</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:0.82rem;font-weight:800;color:${remaining<=0?'var(--red)':'var(--green)'};padding-left:4px;border-top:1px dashed var(--border);margin-top:2px;padding-top:2px;">
-          <span>Remaining</span>
-          <span>₱${fmt(remaining)}</span>
-        </div>` : ''}
-      </div>`;
-    }).join('');
-
+    openHTML += openAmounts.map(a => `
+      <div class="inv-list-item">
+        <span style="font-weight:700;">${escHtml(a.name)}</span>
+        <span style="font-weight:800;color:var(--blue);">₱${fmt(a.amount||0)}</span>
+      </div>`).join('');
     openHTML += `<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:0.9rem;border-top:1px dashed var(--border);margin-top:8px;"><span>CASH TOTAL</span><span style="color:var(--blue);">₱${fmt(openAmtTotal)}</span></div>`;
-    if (dayExpenseTotal > 0) {
-      openHTML += `
-        <div style="display:flex;justify-content:space-between;padding-top:6px;font-size:0.85rem;color:var(--orange);">
-          <span>− Expenses / Cash-outs</span>
-          <span style="font-weight:800;">−₱${fmt(dayExpenseTotal)}</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding-top:6px;font-weight:800;font-size:0.95rem;border-top:2px solid var(--border);margin-top:6px;">
-          <span>REMAINING CASH</span>
-          <span style="color:${openCashAfterExpenses <= 0 ? 'var(--red)' : 'var(--green)'};">₱${fmt(openCashAfterExpenses)}</span>
-        </div>`;
-      // Itemised expense breakdown under the opening cash section
-      openHTML += `<div style="margin-top:8px;border-left:3px solid rgba(251,146,60,0.4);padding-left:10px;">`;
-      dayExpenses.forEach(e => {
-        const t   = new Date(e.datetime).toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit'});
-        const src = e.cashSource ? ` · from <b>${escHtml(e.cashSource)}</b>` : '';
-        openHTML += `<div style="display:flex;justify-content:space-between;font-size:0.78rem;padding:2px 0;color:var(--text2);">
-          <span>🔸 ${escHtml(e.desc)}${e.category ? ' ('+escHtml(e.category)+')' : ''}${src} <span style="color:var(--text3);">${t}</span></span>
-          <span style="font-weight:700;color:var(--orange);">−₱${fmt(e.amount)}</span>
-        </div>`;
-      });
-      openHTML += `</div>`;
-    }
   }
   openingList.innerHTML = openHTML || `<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No opening inventory set.</p>`;
 
@@ -1629,11 +1320,8 @@ function renderInventory() {
 
   // ── Comparison report ────────────────────────────────────────────────────
   const anyShiftHasClosing = dayShifts.some(s => (s.closing?.ingredients?.length || s.closing?.amounts?.length));
-  // Always show the report section — even without a closing, the opening data
-  // is useful to see (stock on hand, pull-outs, etc.). When no closing exists,
-  // we render an opening-only table with a "no closing yet" notice.
-  reportSection.style.display = 'block';
   if (anyShiftHasClosing) {
+    reportSection.style.display = 'block';
 
     // Build report across ALL shifts so the table shows the full day
     // For single shift: Item | Opening | Closing | Used | Actual | Variance | Status
@@ -1692,19 +1380,7 @@ function renderInventory() {
         // check) wrongly subtracted mid-shift deliveries too, which were already
         // reflected in the cashier's closing count, distorting Used/shrinkage.
         const postClosingDelta = postClosingNetQtyFor(name, 0);
-        // PERMANENT FIX: a shift with no saved closing yet used to show "—"
-        // (blank) for Used/Closing here, even when sales had already been
-        // auto-deducted live (opI.usedQty) — making the official report look
-        // like zero activity happened, while the live Opening Inventory card
-        // above correctly showed "−N sold". Fall back to the LIVE usedQty so
-        // the report always reflects real activity, not just finalized
-        // closings. liveUsedQty/liveRemaining are clearly distinguished from
-        // a real saved closing via the "(live)" tag below — they are an
-        // in-progress snapshot, not a locked-in physical count.
-        const hasLiveTracking = !clI && opI && (opI.usedQty || 0) > 0;
-        const liveUsedQty = hasLiveTracking ? (opI.usedQty || 0) : null;
-        const liveRemaining = hasLiveTracking ? Math.max(0, startQty - liveUsedQty) : null;
-        const usedQty  = endQty !== null ? Math.max(0, (startQty - postClosingDelta) - endQty) : liveUsedQty;
+        const usedQty  = endQty !== null ? Math.max(0, (startQty - postClosingDelta) - endQty) : null;
         unit = opI?.unit || clI?.unit || 'pcs';
         const hasActual = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
         const actualQty = hasActual ? clI.actualQty : null;
@@ -1718,21 +1394,16 @@ function renderInventory() {
         const shortAmount = (hasActual && actualQty < endQty) ? (endQty - actualQty) : 0;
         if (shortAmount > 0) totalShorts++;
         const ingThreshold = getIngredientThreshold(name);
-        const effectiveClose = hasActual ? actualQty : (endQty !== null ? endQty : liveRemaining);
+        const effectiveClose = hasActual ? actualQty : endQty;
         const isCloseLow = ingThreshold !== null && effectiveClose !== null && effectiveClose > 0 && effectiveClose <= ingThreshold;
         let status = shortAmount > 0 ? `<span class="inv-status-tag inv-tag-low">⚠️ Short - ${shortAmount} ${escHtml(unit)}</span>`
-          : (endQty === 0 || (hasActual && actualQty === 0) || liveRemaining === 0) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
+          : (endQty === 0 || (hasActual && actualQty === 0)) ? `<span class="inv-status-tag inv-tag-low">⚡ Empty</span>`
           : isCloseLow ? `<span class="inv-status-tag inv-tag-low">⚡ Low Stock</span>`
           : `<span class="inv-status-tag inv-tag-ok">✓ OK</span>`;
-        const closingCellContent = endQty !== null
-          ? endQty+' '+escHtml(unit)
-          : (liveRemaining !== null
-              ? `${liveRemaining} ${escHtml(unit)} <span style="font-size:0.68rem;color:var(--text3);font-weight:700;">(live)</span>`
-              : '<span style="color:var(--text3);font-size:0.78rem;">—</span>');
         rows += `<tr>
           <td><strong>${escHtml(name)}</strong> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span></td>
           <td style="color:${stockLevelColor(startQty, name)};">${startQty} ${escHtml(unit)}${deliveredQty > 0 ? `<div style="font-size:0.68rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.68rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>
-          <td style="color:${endQty !== null ? stockLevelColor(endQty, name) : (liveRemaining !== null ? stockLevelColor(liveRemaining, name) : '')};">${closingCellContent}</td>
+          <td style="color:${endQty !== null ? stockLevelColor(endQty, name) : ''};">${endQty !== null ? endQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty !== null ? (usedQty > 0 ? '-'+usedQty : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${hasActual ? stockLevelColor(actualQty, name) : ''};font-weight:800;">${hasActual ? actualQty+' '+escHtml(unit) : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>
           <td style="color:${vColor};font-weight:800;">${vLabel}</td>
@@ -1754,33 +1425,17 @@ function renderInventory() {
           // double-counted it (the old `s.closing ? ... : 0` check couldn't
           // tell "closed, movement was before" from "closed, movement was after").
           const postClosingDelta = postClosingNetQtyFor(name, si);
-          // PERMANENT FIX: a shift with no saved closing yet (endQty === null)
-          // used to report 0 Used here even when sales had already been
-          // auto-deducted live onto opI.usedQty — so an in-progress shift
-          // with real sales showed "—" for Used and the full undeducted
-          // qty for everything downstream (Total Used, Status), completely
-          // hiding that activity from the official report. Fall back to the
-          // live usedQty/remaining for any shift that hasn't been closed yet.
-          const hasLiveTrackingI = !clI && opI && (opI.usedQty || 0) > 0;
-          const liveUsedQtyI = hasLiveTrackingI ? (opI.usedQty || 0) : null;
-          const liveRemainingI = hasLiveTrackingI ? Math.max(0, startQty - liveUsedQtyI) : null;
-          const usedQty  = (endQty !== null) ? Math.max(0, (startQty - postClosingDelta) - endQty) : (liveUsedQtyI || 0);
+          const usedQty  = (endQty !== null) ? Math.max(0, (startQty - postClosingDelta) - endQty) : 0;
           unit = opI?.unit || clI?.unit || unit;
           totalUsed += usedQty;
-          // lastEndQty drives the "Empty"/"Low Stock" status below — when this
-          // shift is still open, fall back to the live remaining qty so an
-          // in-progress shift that's actually run low/out is correctly
-          // flagged instead of being skipped because endQty is null.
-          lastEndQty = endQty !== null ? endQty : (liveRemainingI !== null ? liveRemainingI : lastEndQty);
+          lastEndQty = endQty;
           if (opI && startQty > 0) everHadStock = true;
           const hasActualI = clI && clI.actualQty !== undefined && clI.actualQty !== null && clI.actualQty !== '';
           const actualQtyI = hasActualI ? clI.actualQty : null;
           const shortQtyI  = (hasActualI && endQty !== null) ? Math.max(0, endQty - actualQtyI) : null;
           if (shortQtyI !== null && shortQtyI > 0) { totalShorts++; totalShortQty += shortQtyI; }
-          const closeCellI = clI ? (endQty ?? '—')
-            : (liveRemainingI !== null ? `${liveRemainingI} <span style="font-size:0.65rem;color:var(--text3);font-weight:700;">(live)</span>` : '—');
           cols += `<td style="color:${opI ? stockLevelColor(startQty, name) : ''};">${opI ? startQty : '—'}${deliveredQty > 0 ? `<div style="font-size:0.65rem;color:var(--blue);font-weight:700;">+${deliveredQty} delivered</div>` : ''}${pulledQty > 0 ? `<div style="font-size:0.65rem;color:var(--red);font-weight:700;">−${pulledQty} pulled out</div>` : ''}</td>`;
-          cols += `<td style="color:${clI && endQty !== null ? stockLevelColor(endQty, name) : (liveRemainingI !== null ? stockLevelColor(liveRemainingI, name) : '')};">${closeCellI}</td>`;
+          cols += `<td style="color:${clI && endQty !== null ? stockLevelColor(endQty, name) : ''};">${clI ? (endQty ?? '—') : '—'}</td>`;
           cols += `<td style="color:${hasActualI ? stockLevelColor(actualQtyI, name) : ''};font-weight:700;">${hasActualI ? actualQtyI : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${shortQtyI>0?'var(--red)':'var(--text3);'}font-weight:${shortQtyI>0?'800':'400'};">${shortQtyI !== null ? (shortQtyI > 0 ? '-'+shortQtyI : '—') : '<span style="color:var(--text3);font-size:0.78rem;">—</span>'}</td>`;
           cols += `<td style="color:${usedQty>0?'var(--red)':'var(--text3)'};">${usedQty > 0 ? '-'+usedQty : '—'}</td>`;
@@ -1889,7 +1544,6 @@ function renderInventory() {
     }
 
     // Balance check — first shift opening, last shift closing (actual count overrides closingAmount)
-    // Expenses are now factored in: Opening − Expenses − Closing = operational cash used
     const firstShift = dayShifts[0];
     const lastShift  = dayShifts[dayShifts.length - 1];
     const lastShiftClosed = lastShift?.closing && (lastShift.closing.amounts||[]).length > 0;
@@ -1905,27 +1559,21 @@ function renderInventory() {
           return a + (v || 0);
         }, 0)
       : null;
-    // Cash used by operations = Opening − Expenses − Closing.
-    // Without subtracting expenses, a ₱500 Gasul expense would show as
-    // ₱500 "discrepancy" even though the cashier correctly spent it.
-    const cashAfterExpenses = Math.max(0, totalOpenCash - dayExpenseTotal);
-    const totalUsedCash  = totalCloseCash !== null ? Math.max(0, cashAfterExpenses - totalCloseCash) : null;
-    const isBalanced = totalCloseCash !== null && Math.abs(cashAfterExpenses - totalCloseCash) < 0.01;
+    const totalUsedCash  = totalCloseCash !== null ? Math.max(0, totalOpenCash - totalCloseCash) : null;
+    const isBalanced = totalCloseCash !== null && Math.abs(totalOpenCash - totalCloseCash) < 0.01;
     const balanceEl = document.getElementById('invBalanceCheck');
     balanceEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;">
-        <div style="text-align:center;"><div style="font-size:0.7rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.15rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
-        ${dayExpenseTotal > 0 ? `<div style="text-align:center;"><div style="font-size:0.7rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">EXPENSES</div><div style="font-size:1.15rem;font-weight:800;color:var(--orange);">−₱${fmt(dayExpenseTotal)}</div><div style="font-size:0.68rem;color:var(--text3);">${dayExpenses.length} item${dayExpenses.length!==1?'s':''}</div></div>` : ''}
-        <div style="text-align:center;"><div style="font-size:0.7rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">${dayExpenseTotal > 0 ? 'CASH LEFT' : 'CASH USED'}</div><div style="font-size:1.15rem;font-weight:800;color:var(--red);">${totalUsedCash !== null ? '-₱'+fmt(totalUsedCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
-        <div style="text-align:center;"><div style="font-size:0.7rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.15rem;font-weight:800;color:var(--green);">${totalCloseCash !== null ? '₱'+fmt(totalCloseCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CASH USED</div><div style="font-size:1.2rem;font-weight:800;color:var(--red);">${totalUsedCash !== null ? '-₱'+fmt(totalUsedCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
+        <div style="text-align:center;"><div style="font-size:0.72rem;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div><div style="font-size:1.2rem;font-weight:800;color:var(--green);">${totalCloseCash !== null ? '₱'+fmt(totalCloseCash) : '<span style="color:var(--text3);font-size:0.95rem;">—</span>'}</div></div>
       </div>
-      ${dayExpenseTotal > 0 ? `<div style="font-size:0.75rem;color:var(--text3);text-align:center;margin-bottom:10px;">Balance = Opening (₱${fmt(totalOpenCash)}) − Expenses (₱${fmt(dayExpenseTotal)}) − Closing cash</div>` : ''}
       <div style="padding:14px 20px;border-radius:12px;text-align:center;background:${!lastShiftClosed?'rgba(234,179,8,0.1)':isBalanced?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)'};border:2px solid ${!lastShiftClosed?'rgba(234,179,8,0.4)':isBalanced?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'};">
         ${!lastShiftClosed
           ? `<span style="font-size:1.3rem;">🕐</span> <span style="font-weight:800;color:#eab308;font-size:1rem;">Shift not yet closed — no balance data available</span>`
           : isBalanced
             ? `<span style="font-size:1.3rem;">✅</span> <span style="font-weight:800;color:var(--green);font-size:1rem;">Cash Balanced!</span>`
-            : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(cashAfterExpenses - totalCloseCash))}</span>`}
+            : `<span style="font-size:1.3rem;">⚠️</span> <span style="font-weight:800;color:#ef4444;font-size:1rem;">Cash Discrepancy: ₱${fmt(Math.abs(totalOpenCash - totalCloseCash))}</span>`}
       </div>`;
     balanceEl.style.background = 'var(--card-bg)';
     balanceEl.style.borderColor = isBalanced ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
@@ -1933,294 +1581,10 @@ function renderInventory() {
     const oldEl = document.getElementById('invAllShifts');
     if (oldEl) oldEl.remove();
   } else {
-    // No closing yet — render an opening-only report so the cashier can still
-    // see current stock levels, pull-outs, and deliveries in table form.
-    const table = document.getElementById('invReportTable');
-    const thead = table.querySelector('thead tr');
-    const tbody = document.getElementById('invReportBody');
-    thead.innerHTML = '<th>Ingredient/Supply</th><th>Opening</th><th>Closing</th><th>Used/Sold</th><th>Actual Count</th><th>Variance</th><th>Status</th>';
-
-    const allDeliveries = loadSharedDeliveries();
-    let rows = '';
-
-    // Collect all opening ingredients across all shifts for this day
-    const allIngNames = [...new Set(dayShifts.flatMap(s =>
-      (s.opening?.ingredients || []).map(i => i.name)
-    ))];
-    const allAmtNames = [...new Set(dayShifts.flatMap(s =>
-      (s.opening?.amounts || []).map(a => a.name)
-    ))];
-
-    allIngNames.forEach(name => {
-      const opI = openIngredients.find(i => i.name === name);
-      const unit = opI?.unit || 'pcs';
-      const openQty = opI ? (opI.qty || 0) : 0;
-      // Show pull-out/delivery hints the same way the full report does
-      const netMoved = allDeliveries
-        .filter(d => d.dateKey === dateKey && d.shiftIndex === viewIdx
-          && d.item && d.item.trim().toLowerCase() === name.trim().toLowerCase())
-        .reduce((sum, d) => sum + (d.type === 'pullout' ? -(d.qtyNum || 0) : (d.qtyNum || 0)), 0);
-      const movedHint = netMoved !== 0
-        ? `<span style="font-size:0.72rem;color:${netMoved < 0 ? 'var(--red)' : 'var(--green)'};margin-left:4px;">${netMoved < 0 ? netMoved : '+' + netMoved} ${netMoved < 0 ? 'pulled out' : 'delivered'}</span>`
-        : '';
-      // PERMANENT FIX: this whole branch renders whenever NOT A SINGLE shift
-      // today has a saved closing — which is the common case while a shift
-      // is still actively open. It used to hardcode "—" for Closing/Used/
-      // Actual/Variance for every ingredient, completely ignoring live
-      // usedQty written by autoDeductIngredients() as sales happen. That
-      // made the official report look like zero activity occurred all day,
-      // even with dozens of recorded sales — exactly what was reported.
-      // Use live usedQty/remaining here too, tagged "(live)" so it's clear
-      // this isn't a finalized physical count yet.
-      const usedQty = opI ? (opI.usedQty || 0) : 0;
-      const remainingQty = opI ? Math.max(0, openQty - usedQty) : 0;
-      const hasLiveUsage = usedQty > 0;
-      const ingThresholdO = getIngredientThreshold(name);
-      const isLowO = ingThresholdO !== null && remainingQty > 0 && remainingQty <= ingThresholdO;
-      const statusO = remainingQty === 0 && openQty > 0
-        ? `<span style="color:var(--red);font-weight:700;">⚡ Empty</span>`
-        : isLowO
-          ? `<span style="color:var(--orange);font-weight:700;">⚡ Low Stock</span>`
-          : `<span style="color:var(--green);font-weight:700;">✓ OK</span>`;
-      rows += `<tr>
-        <td><b>${escHtml(name)}</b> <span style="font-size:0.72rem;color:var(--text3);">(qty)</span>${movedHint}</td>
-        <td style="color:var(--green);font-weight:700;">${openQty} ${escHtml(unit)}</td>
-        <td style="color:${hasLiveUsage ? stockLevelColor(remainingQty, name) : 'var(--text3)'};">${hasLiveUsage ? `${remainingQty} ${escHtml(unit)} <span style="font-size:0.65rem;font-weight:700;">(live)</span>` : '—'}</td>
-        <td style="color:${hasLiveUsage ? 'var(--red)' : 'var(--text3)'};">${hasLiveUsage ? '-'+usedQty : '—'}</td>
-        <td style="color:var(--text3);">—</td>
-        <td style="color:var(--text3);">—</td>
-        <td>${statusO}</td>
-      </tr>`;
-    });
-
-    allAmtNames.forEach(name => {
-      const opA = openAmounts.find(a => a.name === name);
-      const openAmt = opA ? (opA.amount || 0) : 0;
-      rows += `<tr>
-        <td><b>${escHtml(name)}</b> <span style="font-size:0.72rem;color:var(--blue);">(₱)</span></td>
-        <td style="color:var(--blue);font-weight:700;">₱${fmt(openAmt)}</td>
-        <td style="color:var(--text3);">—</td>
-        <td style="color:var(--text3);">—</td>
-        <td style="color:var(--text3);">—</td>
-        <td style="color:var(--text3);">—</td>
-        <td><span style="color:var(--green);font-weight:700;">✓ OK</span></td>
-      </tr>`;
-    });
-
-    tbody.innerHTML = rows || '<tr><td colspan="7" style="text-align:center;color:var(--text3);">No opening inventory set.</td></tr>';
-
-    // Cash summary — opening only (shift still open)
-    const balanceEl = document.getElementById('invBalanceCheck');
-    if (balanceEl) {
-      const totalOpenCash = openAmounts.reduce((s, a) => s + (a.amount || 0), 0);
-      const openCashRemainingLive = Math.max(0, totalOpenCash - dayExpenseTotal);
-      balanceEl.innerHTML = `
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
-          <div style="text-align:center;">
-            <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">OPENING CASH</div>
-            <div style="font-size:1.2rem;font-weight:800;color:var(--blue);">₱${fmt(totalOpenCash)}</div>
-          </div>
-          ${dayExpenseTotal > 0 ? `<div style="text-align:center;">
-            <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">EXPENSES</div>
-            <div style="font-size:1.2rem;font-weight:800;color:var(--orange);">−₱${fmt(dayExpenseTotal)}</div>
-            <div style="font-size:0.68rem;color:var(--text3);">${dayExpenses.length} item${dayExpenses.length!==1?'s':''}</div>
-          </div>` : ''}
-          ${dayExpenseTotal > 0 ? `<div style="text-align:center;">
-            <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">REMAINING</div>
-            <div style="font-size:1.2rem;font-weight:800;color:${openCashRemainingLive<=0?'var(--red)':'var(--green)'};">₱${fmt(openCashRemainingLive)}</div>
-          </div>` : ''}
-          <div style="text-align:center;">
-            <div style="font-size:0.7rem;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">CLOSING CASH</div>
-            <div style="font-size:1.2rem;font-weight:800;color:var(--text3);">—</div>
-          </div>
-        </div>
-        <div style="padding:14px 20px;border-radius:12px;border:1.5px solid rgba(234,179,8,0.4);background:rgba(234,179,8,0.07);text-align:center;">
-          🕐 <span style="font-weight:800;color:#eab308;font-size:1rem;">Shift not yet closed — no closing data available</span>
-        </div>`;
-      balanceEl.style.background = 'var(--card-bg)';
-      balanceEl.style.borderColor = 'rgba(234,179,8,0.3)';
-    }
-
-    const oldEl = document.getElementById('invAllShifts');
-    if (oldEl) oldEl.remove();
+    reportSection.style.display = 'none';
   }
 }
 
-
-// =================== EXPENSE / CASH-OUT SYSTEM ===================
-const EXPENSE_KEY = 'burgerStreetExpenses';
-
-function loadExpenses() {
-  try {
-    const s = cloudStorage.getItem(EXPENSE_KEY);
-    return s ? JSON.parse(s) : [];
-  } catch(e) { return []; }
-}
-
-function saveExpenses(arr) {
-  try { cloudStorage.setItem(EXPENSE_KEY, JSON.stringify(arr)); } catch(e) {}
-}
-
-function openExpenseModal() {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  document.getElementById('expenseDatetime').value = local;
-  document.getElementById('expenseDesc').value = '';
-  document.getElementById('expenseAmount').value = '';
-  document.getElementById('expenseNotes').value = '';
-  document.getElementById('expensePaidBy').value = posState.settings.cashierName || '';
-  document.getElementById('expenseCategory').value = 'Supplies';
-
-  // Populate cash source dropdown from today's opening amounts
-  const sourceRow    = document.getElementById('expenseCashSourceRow');
-  const sourceSelect = document.getElementById('expenseCashSource');
-  const dateKey      = getTodayKey();
-  const data         = loadInventoryData();
-  const activeShift  = getActiveShift(dateKey, data) || {};
-  const openAmounts  = (activeShift.opening && activeShift.opening.amounts) || [];
-
-  sourceSelect.innerHTML = '';
-  if (openAmounts.length > 1) {
-    // First item is the default (Pocket Money / Change) — pre-selected
-    openAmounts.forEach((a, i) => {
-      const opt = document.createElement('option');
-      opt.value = a.name;
-      opt.textContent = `${a.name} (₱${fmt(a.amount || 0)})`;
-      if (i === 0) opt.selected = true;
-      sourceSelect.appendChild(opt);
-    });
-    sourceRow.style.display = 'block';
-  } else {
-    sourceRow.style.display = 'none';
-  }
-
-  document.getElementById('expenseModal').style.display = 'flex';
-}
-
-function closeExpenseModal() {
-  document.getElementById('expenseModal').style.display = 'none';
-}
-
-function saveExpense() {
-  const desc    = document.getElementById('expenseDesc').value.trim();
-  const amount  = parseFloat(document.getElementById('expenseAmount').value);
-  const cat     = document.getElementById('expenseCategory').value;
-  const paidBy  = document.getElementById('expensePaidBy').value.trim();
-  const notes   = document.getElementById('expenseNotes').value.trim();
-  const dt      = document.getElementById('expenseDatetime').value;
-
-  // Cash source: which opening amount is this deducted from
-  const sourceRow    = document.getElementById('expenseCashSourceRow');
-  const sourceSelect = document.getElementById('expenseCashSource');
-  let cashSource = null;
-  if (sourceRow && sourceRow.style.display !== 'none' && sourceSelect && sourceSelect.value) {
-    cashSource = sourceSelect.value;
-  } else {
-    // Default: use the first opening amount (Pocket Money / Change) if available
-    const dateKey     = getTodayKey();
-    const data        = loadInventoryData();
-    const activeShift = getActiveShift(dateKey, data) || {};
-    const openAmounts = (activeShift.opening && activeShift.opening.amounts) || [];
-    if (openAmounts.length > 0) cashSource = openAmounts[0].name;
-  }
-
-  if (!desc)           { showToast('Please enter a description.', 'error'); return; }
-  if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
-
-  const expense = {
-    id: Date.now(),
-    category: cat,
-    desc,
-    amount,
-    paidBy: paidBy || '—',
-    notes: notes || '',
-    datetime: dt || new Date().toISOString(),
-    cashSource: cashSource || null
-  };
-
-  const expenses = loadExpenses();
-  expenses.unshift(expense);
-  saveExpenses(expenses);
-  closeExpenseModal();
-  renderExpenseLog();
-  // Refresh inventory so opening cash section reflects new expense immediately
-  if (document.getElementById('invOpeningList')) renderInventory();
-  showToast(`✅ Expense of ₱${fmt(amount)} recorded.`, 'success');
-}
-
-function deleteExpense(id) {
-  if (!confirm('Delete this expense record?')) return;
-  const expenses = loadExpenses().filter(e => e.id !== id);
-  saveExpenses(expenses);
-  renderExpenseLog();
-  if (document.getElementById('invOpeningList')) renderInventory();
-  showToast('Expense deleted.', '');
-}
-
-function renderExpenseLog() {
-  const container  = document.getElementById('expenseList');
-  const totalBar   = document.getElementById('expenseTotalBar');
-  const totalAmtEl = document.getElementById('expenseTotalAmt');
-  if (!container) return;
-
-  const expenses = loadExpenses();
-  const today = new Date().toISOString().split('T')[0];
-  const todayExp = expenses.filter(e => e.datetime && e.datetime.startsWith(today));
-  const todayTotal = todayExp.reduce((s, e) => s + (e.amount || 0), 0);
-
-  if (totalBar) totalBar.style.display = todayTotal > 0 ? 'flex' : 'none';
-  if (totalAmtEl) totalAmtEl.textContent = '₱' + fmt(todayTotal);
-
-  if (!expenses.length) {
-    container.innerHTML = '<p style="color:var(--text3);font-size:0.85rem;text-align:center;padding:16px 0;">No expenses recorded yet.</p>';
-    return;
-  }
-
-  // Category badge colors
-  const catColor = {
-    Supplies:   'var(--orange)',
-    Utilities:  'var(--blue)',
-    Repairs:    '#a855f7',
-    Rent:       '#ec4899',
-    Transport:  'var(--green)',
-    Marketing:  '#eab308',
-    Other:      'var(--text3)'
-  };
-
-  container.innerHTML = expenses.map(e => {
-    const dt      = new Date(e.datetime);
-    const dateStr = dt.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-    const timeStr = dt.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-    const isToday = e.datetime && e.datetime.startsWith(today);
-    const color   = catColor[e.category] || 'var(--text3)';
-    return `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border);gap:10px;">
-        <div style="flex:1;min-width:0;">
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px;">
-            <span style="font-size:0.7rem;font-weight:800;color:${color};background:${color}1a;border:1px solid ${color}55;border-radius:20px;padding:1px 8px;">${escHtml(e.category)}</span>
-            ${isToday ? '<span style="font-size:0.7rem;background:var(--orange);color:#fff;padding:1px 7px;border-radius:20px;font-weight:700;">TODAY</span>' : ''}
-          </div>
-          <div style="font-weight:700;font-size:0.95rem;color:var(--text);">${escHtml(e.desc)}</div>
-          ${e.notes ? `<div style="font-size:0.78rem;color:var(--text3);margin-top:1px;">📝 ${escHtml(e.notes)}</div>` : ''}
-          <div style="font-size:0.75rem;color:var(--text3);margin-top:2px;">👤 ${escHtml(e.paidBy)}</div>
-          ${e.cashSource ? `<div style="font-size:0.75rem;color:var(--blue);margin-top:2px;font-weight:600;">💵 From: ${escHtml(e.cashSource)}</div>` : ''}
-        </div>
-        <div style="text-align:right;flex-shrink:0;">
-          <div style="font-weight:800;color:var(--orange);font-size:1rem;">-₱${fmt(e.amount)}</div>
-          <div style="font-size:0.78rem;font-weight:700;color:var(--text2);">${dateStr}</div>
-          <div style="font-size:0.75rem;color:var(--text3);">${timeStr}</div>
-          <button onclick="deleteExpense(${e.id})" style="margin-top:4px;font-size:0.7rem;color:var(--red);background:none;border:none;cursor:pointer;padding:0;font-weight:700;">🗑 Delete</button>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function getExpenseTotalToday() {
-  const today = new Date().toISOString().split('T')[0];
-  return loadExpenses()
-    .filter(e => e.datetime && e.datetime.startsWith(today))
-    .reduce((s, e) => s + (e.amount || 0), 0);
-}
 
 // =================== PRIORITY STOCK ALERTS ===================
 // Returns the live remaining stock for each opening ingredient in the active shift.
