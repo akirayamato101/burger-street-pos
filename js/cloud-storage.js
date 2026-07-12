@@ -19,9 +19,48 @@
    relevant screen's render function automatically so a second cashier's
    sale, a stock update, etc. shows up on every screen without anyone
    tapping refresh.
+
+   FALLBACK MODE: if the Firebase SDK didn't load (no internet on first
+   visit, an ad-blocker/firewall blocking Google domains, or a Firebase
+   outage) firebase-config.js leaves firestoreDb as null instead of
+   throwing. When that happens, cloudStorage below falls back to the
+   browser's real localStorage so the app keeps working on this one
+   device — it just won't sync to other cashier devices until the
+   connection comes back. Every caller uses the exact same
+   getItem/setItem/removeItem/onReady API either way.
    ============================================= */
 
-const cloudStorage = (() => {
+// ---- FALLBACK: plain localStorage, wrapped in the same API as cloud mode ----
+function buildLocalOnlyStorage(reason) {
+  console.warn('Cloud sync unavailable (' + reason + ') — Burger Street POS is saving locally on this device only.');
+  return {
+    getItem(key) {
+      try { return localStorage.getItem(key); } catch (e) { return null; }
+    },
+    setItem(key, value) {
+      try {
+        localStorage.setItem(key, value);
+      } catch (e) {
+        console.error('Local save failed for "' + key + '":', e);
+        if (typeof showToast === 'function') {
+          showToast('⚠️ Could not save — device storage may be full.', 'error');
+        }
+      }
+    },
+    removeItem(key) {
+      try { localStorage.removeItem(key); } catch (e) { console.error('Local delete failed for "' + key + '":', e); }
+    },
+    // Nothing to wait for locally — call back on the next tick so callers
+    // that assume onReady is always async behave consistently either way.
+    onReady(cb) { setTimeout(cb, 0); }
+  };
+}
+
+const cloudStorage = (typeof firebase === 'undefined' || !firestoreDb)
+  ? buildLocalOnlyStorage(typeof firebase === 'undefined' ? 'Firebase SDK did not load' : 'Firebase failed to initialize')
+  : (() => {
+  try {
+
   const cache = {};
   let ready = false;
   const readyCallbacks = [];
@@ -145,6 +184,13 @@ const cloudStorage = (() => {
       if (ready) cb(); else readyCallbacks.push(cb);
     }
   };
+
+  } catch (e) {
+    // Something about cloud setup itself threw synchronously (e.g. the
+    // Firestore SDK loaded but the Auth SDK didn't). Fall back rather than
+    // taking the rest of the app down with it.
+    return buildLocalOnlyStorage('Firebase setup failed: ' + e);
+  }
 })();
 
 /* ---- Tiny "Connecting..." overlay, shown only on first load ---- */

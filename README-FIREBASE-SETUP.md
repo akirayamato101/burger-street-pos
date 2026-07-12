@@ -9,12 +9,12 @@ inventory, deliveries, expenses, and settings — live, with no manual sync.
 
 | File | Change |
 |---|---|
-| `js/firebase-config.js` | **New.** Your Firebase project config + Firestore init. You must fill in the placeholder values. |
-| `js/cloud-storage.js` | **New.** `cloudStorage` — a drop-in replacement for `localStorage` backed by Firestore, with real-time sync. |
-| `pos-part1.js`, `pos-part2.js`, `pos-part3.js` | Every call that read/wrote **shared business data** (`localStorage.getItem/setItem/removeItem`) was changed to `cloudStorage.getItem/setItem/removeItem`. |
-| `pos-part1.js` (init) | The startup code now waits for the first Firestore sync (`cloudStorage.onReady(...)`) before showing the cashier login screen, so you don't see a flash of empty data on load. |
-| `index.html` | Added the Firebase SDK `<script>` tags and the two new files, loaded *before* `pos-part1.js`. Bumped the `?v=` cache-busting numbers on the files that changed. |
-| `sw.js` | Bumped the cache version and added the new files/CDN scripts to the offline cache list. |
+| `js/firebase-config.js` | Your Firebase project config + Firestore init. You must fill in the placeholder values. Now falls back to local-only mode instead of crashing the app if the SDK can't load. |
+| `js/cloud-storage.js` | `cloudStorage` — a drop-in replacement for `localStorage` backed by Firestore, with real-time sync. Falls back to the browser's real `localStorage` (same device only) if Firebase is unavailable — see the comment at the top of the file. |
+| `js/core-pos.js`, `js/products-modals.js`, `js/cashier-inventory.js` | Every call that read/wrote **shared business data** (`localStorage.getItem/setItem/removeItem`) was changed to `cloudStorage.getItem/setItem/removeItem`. (These three files were renamed from `pos-part1.js`/`pos-part2.js`/`pos-part3.js` — same content, clearer names.) |
+| `js/core-pos.js` (init) | The startup code now waits for the first Firestore sync (`cloudStorage.onReady(...)`) before showing the cashier login screen, so you don't see a flash of empty data on load. |
+| `index.html` | Added the Firebase SDK `<script>` tags and the two new files, loaded *before* the app's own JS files. |
+| `sw.js` | Bumped the cache version and added the new files/CDN scripts to the offline cache list (third-party CDN scripts are now cached best-effort, so one being unreachable can't block the rest of the app from being available offline). |
 
 ### What was deliberately left untouched
 - **`'burgStreet_activeSession'`** — which cashier is currently logged in on *this* terminal. This is a device/session detail, not shared business data, so it stays in plain `localStorage`.
